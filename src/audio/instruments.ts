@@ -255,15 +255,22 @@ function synthDrum(
   const out = new Float32Array(n);
 
   if (freq < 330) {
-    // ── KICK DRUM ──
-    const startFreq = 155;
-    const endFreq = 50;
+    // ── SOLID PUNCHY KICK DRUM ──
+    // Solid mid-punch (sweeping 260Hz down to 95Hz) so it punches clearly on phone speakers,
+    // plus a beater impact click (1.8kHz transient) for immediate percussive punch.
+    const startFreq = 260;
+    const bodyFreq = 95;
     for (let i = 0; i < n; i++) {
       const t = i / sampleRate;
-      const f = endFreq + (startFreq - endFreq) * Math.exp(-t * 38);
-      const click = (Math.random() * 2 - 1) * Math.exp(-t * 260) * 0.4;
-      const sub = Math.sin(2 * Math.PI * f * t) * Math.exp(-t * 8.5);
-      out[i] = (click + sub * 0.95) * velocity * 0.9;
+      // Fast pitch sweep delivers a physical thump on small drivers
+      const pitch = bodyFreq + (startFreq - bodyFreq) * Math.exp(-t * 55);
+      // Hard beater click transient
+      const beaterClick = Math.sin(2 * Math.PI * 1800 * t) * Math.exp(-t * 220) * 0.45;
+      // Resonant punchy body tone with 2nd harmonic warmth
+      const body =
+        (Math.sin(2 * Math.PI * pitch * t) * 0.75 +
+         Math.sin(2 * Math.PI * pitch * 2 * t) * 0.25) * Math.exp(-t * 11.0);
+      out[i] = (beaterClick + body) * velocity * 0.95;
     }
   } else if (freq < 450) {
     // ── SNARE & TOM ──

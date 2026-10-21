@@ -79,16 +79,17 @@ export function loadClip(samples: Float32Array, uriFactory: (s: Float32Array) =>
   return id;
 }
 
-export function playClip(id: number): void {
+export function playClip(id: number, loop = false, onEnd?: () => void): void {
   const clip = clips.get(id);
   if (!clip) return;
   if (Platform.OS === 'web') {
-    playWeb(clip.samples, id);
+    playWeb(clip.samples, id, loop, onEnd);
     return;
   }
   const player = clip.nativeId !== null ? nativePlayers.get(clip.nativeId) : undefined;
   if (!player) return;
   try {
+    player.loop = loop;
     const res = player.seekTo(0);
     if (res && typeof (res as Promise<void>).then === 'function') {
       (res as Promise<void>).then(() => player.play()).catch(() => player.play());
@@ -100,7 +101,7 @@ export function playClip(id: number): void {
   player.play();
 }
 
-function playWeb(samples: Float32Array, id: number): void {
+function playWeb(samples: Float32Array, id: number, loop = false, onEnd?: () => void): void {
   resumeWebAudio();
   if (!webCtx) return;
   const ctx = webCtx;
@@ -115,9 +116,11 @@ function playWeb(samples: Float32Array, id: number): void {
     }
     const source = ctx.createBufferSource();
     source.buffer = toAudioBuffer(ctx, samples);
+    source.loop = loop;
     source.connect(ctx.destination);
     source.onended = () => {
       if (webClipId === id) webClipId = null;
+      if (!loop) onEnd?.();
     };
     webClipId = id;
     webSource = source;
@@ -146,6 +149,7 @@ export function stopClip(id: number): void {
   const player = nativePlayers.get(clip.nativeId);
   if (!player) return;
   try {
+    player.loop = false;
     player.pause();
     player.seekTo(0);
   } catch {

@@ -14,12 +14,11 @@ import {
   INSTRUMENTS,
   SINGLE_INSTRUMENTS,
 } from '../audio/instruments';
-
 import { useInstrument } from '../game/InstrumentContext';
 import { useStats } from '../game/StatsContext';
 import { phaseForLevel } from '../game/levels';
 import { gradeColor } from '../game/scoring';
-import { useGameSession } from '../game/useGameSession';
+import { PlaybackSpeed, useGameSession } from '../game/useGameSession';
 import { useLoadingTransition } from '../ui/LoadingTransitionContext';
 import { NeonButton } from '../ui/NeonButton';
 import { Waveform } from '../ui/Waveform';
@@ -36,7 +35,7 @@ export default function Play() {
   const [showTarget, setShowTarget] = useState(false);
   const recorded = useRef<number | null>(null);
 
-  const info = phaseForLevel(session.level.index);
+  const info = phaseForLevel(session.level.streak);
   const innerWidth = width - 40;
 
   useEffect(() => {
@@ -81,6 +80,7 @@ export default function Play() {
         onHearMine={session.previewPlayer}
         onHome={onHome}
         instrument={session.instrument}
+        activePlaying={session.activePlaying}
       />
     );
   }
@@ -89,6 +89,12 @@ export default function Play() {
   const isMixMode = session.instrument === 'mix';
   const selectedNodeInst = session.playerNodeInstruments[session.selectedPoint] || 'piano';
   const selectedNodeMeta = INSTRUMENTS.find((i) => i.id === selectedNodeInst)!;
+
+  const SPEED_OPTIONS: { label: string; val: PlaybackSpeed }[] = [
+    { label: '0.5x Slow', val: 0.5 },
+    { label: '1.0x Normal', val: 1.0 },
+    { label: '1.5x Fast', val: 1.5 },
+  ];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -130,7 +136,6 @@ export default function Play() {
             <Text style={styles.mixSubtitle}>
               Tap below to change this node&apos;s instrument:
             </Text>
-
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -198,17 +203,50 @@ export default function Play() {
           </View>
         ) : null}
 
-        {/* ── Play row ── */}
+        {/* ── Speed and Loop Controls ── */}
+        <View style={styles.playbackControlsRow}>
+          {/* Speed Pills */}
+          <View style={styles.speedRow}>
+            {SPEED_OPTIONS.map((opt) => {
+              const active = session.speed === opt.val;
+              return (
+                <Pressable
+                  key={opt.val}
+                  style={[styles.speedBtn, active && styles.speedBtnActive]}
+                  onPress={() => session.setSpeed(opt.val)}>
+                  <Text style={[styles.speedText, active && styles.speedTextActive]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Loop Mode Check */}
+          <Pressable
+            style={[styles.loopBtn, session.isLooping && styles.loopBtnActive]}
+            onPress={() => session.setIsLooping((prev) => !prev)}>
+            <Text style={[styles.loopText, session.isLooping && styles.loopTextActive]}>
+              🔁 LOOP {session.isLooping ? 'ON' : 'OFF'}
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* ── Play row with Active Highlight ── */}
         <View style={styles.playRow}>
           <NeonButton
-            label="▶ Target"
+            label={session.activePlaying === 'target' ? '◼ Stop Target' : '▶ Play Target'}
             variant="ghost"
+            active={session.activePlaying === 'target'}
+            activeColor={theme.target}
             style={styles.flex}
             onPress={session.previewTarget}
           />
           <NeonButton
-            label="▶ Mine"
+            label={session.activePlaying === 'player' ? '◼ Stop Mine' : '▶ Play Mine'}
             variant="ghost"
+            active={session.activePlaying === 'player'}
+            activeColor={theme.player}
             style={styles.flex}
             onPress={session.previewPlayer}
           />
@@ -242,6 +280,7 @@ function ResultView({
   onHearMine,
   onHome,
   instrument,
+  activePlaying,
 }: {
   result: ReturnType<typeof useGameSession>['result'];
   level: number;
@@ -251,6 +290,7 @@ function ResultView({
   onHearMine: () => void;
   onHome: () => void;
   instrument: string;
+  activePlaying?: 'target' | 'player' | null;
 }) {
   const { width } = useWindowDimensions();
   const innerWidth = width - 40;
@@ -298,10 +338,24 @@ function ResultView({
           />
         </View>
 
-        {/* ── Playback row ── */}
+        {/* ── Playback row with Active Highlight ── */}
         <View style={styles.playRow}>
-          <NeonButton label="Hear Target" variant="ghost" style={styles.flex} onPress={onHearTarget} />
-          <NeonButton label="Hear Mine" variant="ghost" style={styles.flex} onPress={onHearMine} />
+          <NeonButton
+            label={activePlaying === 'target' ? '◼ Stop Target' : 'Hear Target'}
+            variant="ghost"
+            active={activePlaying === 'target'}
+            activeColor={theme.target}
+            style={styles.flex}
+            onPress={onHearTarget}
+          />
+          <NeonButton
+            label={activePlaying === 'player' ? '◼ Stop Mine' : 'Hear Mine'}
+            variant="ghost"
+            active={activePlaying === 'player'}
+            activeColor={theme.player}
+            style={styles.flex}
+            onPress={onHearMine}
+          />
         </View>
 
         <View style={styles.actions}>
@@ -467,20 +521,62 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 10,
   },
-  targetLabel: {
-    fontFamily: mono,
-    fontSize: 10,
-    color: theme.target,
-    letterSpacing: 2,
-    marginBottom: 4,
+
+  // Playback speed and loop row
+  playbackControlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 8,
+    gap: 6,
   },
-  targetNotes: {
+  speedRow: {
+    flexDirection: 'row',
+    gap: 4,
+    flex: 1,
+  },
+  speedBtn: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  speedBtnActive: {
+    borderColor: theme.target,
+    backgroundColor: 'rgba(0,229,255,0.15)',
+  },
+  speedText: {
     fontFamily: mono,
     fontSize: 9,
+    color: theme.textDim,
+  },
+  speedTextActive: {
     color: theme.target,
-    marginBottom: 6,
-    letterSpacing: 0.5,
-    lineHeight: 14,
+    fontWeight: '700',
+  },
+  loopBtn: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  loopBtnActive: {
+    borderColor: '#00f5d4',
+    backgroundColor: 'rgba(0,245,212,0.18)',
+  },
+  loopText: {
+    fontFamily: mono,
+    fontSize: 9,
+    color: theme.textDim,
+  },
+  loopTextActive: {
+    color: '#00f5d4',
+    fontWeight: '700',
   },
 
   // Play/action rows
