@@ -202,8 +202,18 @@ export function flatProfile(pointCount: number): number[] {
   return new Array(pointCount).fill(0);
 }
 
+/**
+ * Returns a randomized starting waveform profile so the player's line
+ * begins jumbled/bent rather than a flat straight line, making matching challenging.
+ */
 export function startProfile(pointCount: number): number[] {
-  return new Array(pointCount).fill(0);
+  const scaleValues = PIANO_KEYS.map((k) => k.value);
+  const out: number[] = [];
+  for (let i = 0; i < pointCount; i++) {
+    const randomVal = scaleValues[Math.floor(Math.random() * scaleValues.length)];
+    out.push(randomVal);
+  }
+  return out;
 }
 
 /** Starting level with randomized melody every new session */
