@@ -29,25 +29,25 @@ export default function Play() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { selectedInstrument } = useInstrument();
+  const { currentStreak, recordRun, resetCurrentStreak } = useStats();
   const { transitionTo } = useLoadingTransition();
-  const session = useGameSession(selectedInstrument);
-  const { recordRun } = useStats();
+  const session = useGameSession(selectedInstrument, currentStreak);
   const [showTarget, setShowTarget] = useState(false);
   const recorded = useRef<number | null>(null);
 
   const info = phaseForLevel(session.level.streak);
   const innerWidth = width - 40;
 
+  // When a level is scored, update stats & streak
   useEffect(() => {
-    if (session.result && recorded.current !== session.level.index) {
-      recorded.current = session.level.index;
-      if (session.result.match) {
-        recordRun(session.level.index, session.result.percent);
-      }
+    if (session.result && recorded.current !== session.level.streak) {
+      recorded.current = session.level.streak;
+      recordRun(session.result.match, session.result.percent);
     }
-  }, [session.result, session.level.index, recordRun]);
+  }, [session.result, session.level.streak, recordRun]);
 
   const onNext = () => {
+    session.stopPlayback();
     transitionTo(() => {
       session.next();
       setShowTarget(false);
@@ -56,14 +56,19 @@ export default function Play() {
   };
 
   const onRetry = () => {
+    session.stopPlayback();
+    // Failing resets streak
+    resetCurrentStreak();
     transitionTo(() => {
       session.retrySame();
       setShowTarget(false);
       recorded.current = null;
-    }, 'Resetting Level…');
+    }, 'Resetting…');
   };
 
   const onHome = () => {
+    // Immediately cut off all playing sounds before navigation
+    session.stopPlayback();
     transitionTo(() => {
       router.replace('/');
     }, 'Returning to Menu…');
@@ -73,7 +78,7 @@ export default function Play() {
     return (
       <ResultView
         result={session.result}
-        level={session.level.index}
+        streak={session.level.streak}
         onNext={onNext}
         onRetry={onRetry}
         onHearTarget={session.previewTarget}
@@ -124,7 +129,7 @@ export default function Play() {
           <Text style={styles.phaseDesc}>{info.description}</Text>
         </View>
 
-        {/* ── Mix Mode: Per-Node Instrument Customizer ── */}
+        {/* ── Mix Mode: Per-Node Instrument Customizer with Audio Preview ── */}
         {isMixMode && (
           <View style={styles.mixCard}>
             <View style={styles.mixHeader}>
@@ -134,7 +139,7 @@ export default function Play() {
               </Text>
             </View>
             <Text style={styles.mixSubtitle}>
-              Tap below to change this node&apos;s instrument:
+              Tap an instrument to hear & assign it to this node:
             </Text>
             <ScrollView
               horizontal
@@ -153,7 +158,10 @@ export default function Play() {
                         backgroundColor: `${meta.color}25`,
                       },
                     ]}
-                    onPress={() => session.setPlayerNodeInstrument(session.selectedPoint, instId)}>
+                    onPress={() => {
+                      session.setPlayerNodeInstrument(session.selectedPoint, instId);
+                      session.playInstrumentPreview(instId);
+                    }}>
                     <Text style={styles.mixEmoji}>{meta.emoji}</Text>
                     <Text
                       style={[
@@ -232,10 +240,10 @@ export default function Play() {
           </Pressable>
         </View>
 
-        {/* ── Play row with Active Highlight ── */}
+        {/* ── Play row with Compact Icon + Target / Mine Labels ── */}
         <View style={styles.playRow}>
           <NeonButton
-            label={session.activePlaying === 'target' ? '◼ Stop Target' : '▶ Play Target'}
+            label={session.activePlaying === 'target' ? '◼ Target' : '▶ Target'}
             variant="ghost"
             active={session.activePlaying === 'target'}
             activeColor={theme.target}
@@ -243,7 +251,7 @@ export default function Play() {
             onPress={session.previewTarget}
           />
           <NeonButton
-            label={session.activePlaying === 'player' ? '◼ Stop Mine' : '▶ Play Mine'}
+            label={session.activePlaying === 'player' ? '◼ Mine' : '▶ Mine'}
             variant="ghost"
             active={session.activePlaying === 'player'}
             activeColor={theme.player}
@@ -273,7 +281,7 @@ export default function Play() {
 
 function ResultView({
   result,
-  level,
+  streak,
   onNext,
   onRetry,
   onHearTarget,
@@ -283,7 +291,7 @@ function ResultView({
   activePlaying,
 }: {
   result: ReturnType<typeof useGameSession>['result'];
-  level: number;
+  streak: number;
   onNext: () => void;
   onRetry: () => void;
   onHearTarget: () => void;
@@ -305,7 +313,9 @@ function ResultView({
         {/* ── Grade header ── */}
         <View style={styles.resultHead}>
           <Text style={styles.resultLevel}>
-            {passed ? `🔥 STREAK ${level} UNLOCKED!` : `STREAK ENDED AT ${Math.max(0, level - 1)}`} · {chosenMeta.emoji} {chosenMeta.label.toUpperCase()}
+            {passed
+              ? `🔥 STREAK ${streak + 1} ACHIEVED!`
+              : `STREAK ENDED AT ${streak}`} · {chosenMeta.emoji} {chosenMeta.label.toUpperCase()}
           </Text>
           <Text style={[styles.gradeBig, { color }]}>{result.grade}</Text>
           <Text style={[styles.percent, { color }]}>{result.percent.toFixed(1)}%</Text>
@@ -338,10 +348,10 @@ function ResultView({
           />
         </View>
 
-        {/* ── Playback row with Active Highlight ── */}
+        {/* ── Playback row with Compact Icon Labels ── */}
         <View style={styles.playRow}>
           <NeonButton
-            label={activePlaying === 'target' ? '◼ Stop Target' : 'Hear Target'}
+            label={activePlaying === 'target' ? '◼ Target' : '▶ Target'}
             variant="ghost"
             active={activePlaying === 'target'}
             activeColor={theme.target}
@@ -349,7 +359,7 @@ function ResultView({
             onPress={onHearTarget}
           />
           <NeonButton
-            label={activePlaying === 'player' ? '◼ Stop Mine' : 'Hear Mine'}
+            label={activePlaying === 'player' ? '◼ Mine' : '▶ Mine'}
             variant="ghost"
             active={activePlaying === 'player'}
             activeColor={theme.player}
@@ -360,16 +370,16 @@ function ResultView({
 
         <View style={styles.actions}>
           {passed ? (
-            <NeonButton label="Next Level" onPress={onNext} />
+            <NeonButton label="Next Level (Keep Streak 🔥)" onPress={onNext} />
           ) : (
-            <NeonButton label="Retry Level" onPress={onRetry} />
+            <NeonButton label="Try Again (New Streak)" onPress={onRetry} />
           )}
           <NeonButton label="Exit to Menu" variant="ghost" onPress={onHome} />
         </View>
 
         {!passed ? (
           <Text style={styles.failNote}>
-            Match 40% or higher to advance. Tip: use HEAR TARGET then HEAR MINE and study the wave shape differences.
+            Match 40% or higher to advance. Tip: use ▶ TARGET then ▶ MINE and study the wave shape differences.
           </Text>
         ) : null}
       </ScrollView>

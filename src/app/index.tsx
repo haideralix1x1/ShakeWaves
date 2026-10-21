@@ -21,7 +21,8 @@ import { mono, theme } from '../ui/theme';
 
 export default function Home() {
   const router = useRouter();
-  const { bestLevel, totalScore } = useStats();
+  const { bestLevel, currentStreak, totalScore } = useStats();
+
   const { selectedInstrument, setSelectedInstrument } = useInstrument();
   const { transitionTo } = useLoadingTransition();
   const [phase, setPhase] = useState(0);
@@ -112,8 +113,9 @@ export default function Home() {
         </View>
 
         <View style={styles.statsRow}>
-          <Stat label="BEST STREAK" value={bestLevel > 0 ? `${bestLevel} 🔥` : '—'} />
-          <Stat label="TOTAL SCORE" value={totalScore.toFixed(0)} />
+          <Stat label="ACTIVE STREAK" value={currentStreak > 0 ? `${currentStreak} 🔥` : '0'} />
+          <Stat label="BEST STREAK" value={bestLevel > 0 ? `${bestLevel} 🏆` : '—'} />
+          <Stat label="SCORE" value={totalScore.toFixed(0)} />
         </View>
 
         <View style={styles.actions}>
