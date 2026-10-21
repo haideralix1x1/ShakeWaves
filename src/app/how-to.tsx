@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useLoadingTransition } from '../ui/LoadingTransitionContext';
@@ -68,6 +68,16 @@ export default function HowTo() {
         ))}
 
         <NeonButton label="Back" variant="ghost" style={styles.back} onPress={handleBack} />
+
+        {/* ── Nameless Forge Copyright Footer ── */}
+        <View style={styles.footerBrand}>
+          <Image
+            source={require('../../assets/Company-dark.png')}
+            style={styles.companyLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.copyrightText}>© 2026 NAMELESS FORGE • ALL RIGHTS RESERVED</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -112,4 +122,24 @@ const styles = StyleSheet.create({
   grade: { fontFamily: mono, fontSize: 16, fontWeight: '900', width: 40 },
   gradeRange: { fontFamily: mono, fontSize: 12, color: theme.textDim, letterSpacing: 1 },
   back: { marginTop: 24 },
+  footerBrand: {
+    alignItems: 'center',
+    marginTop: 28,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(28, 42, 69, 0.4)',
+  },
+  companyLogo: {
+    width: 130,
+    height: 36,
+    marginBottom: 6,
+    opacity: 0.9,
+  },
+  copyrightText: {
+    fontFamily: mono,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    color: theme.textDim,
+    fontWeight: '700',
+  },
 });

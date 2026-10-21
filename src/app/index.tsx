@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -58,6 +59,11 @@ export default function Home() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.hero}>
+          <Image
+            source={require('../../assets/Fevicon.png')}
+            style={styles.heroLogo}
+            resizeMode="contain"
+          />
           <Text style={styles.title}>SHAKE</Text>
           <Text style={styles.titleAccent}>WAVES</Text>
           <Text style={styles.subtitle}>MATCH THE FREQUENCY</Text>
@@ -129,6 +135,17 @@ export default function Home() {
         <Text style={styles.hint}>
           Select your music instrument above before starting. Listen to the target tone, shape your wave, and synchronize.
         </Text>
+
+        {/* ── Nameless Forge Copyright Footer ── */}
+        <View style={styles.footerBrand}>
+          <Image
+            source={require('../../assets/Company-dark.png')}
+            style={styles.companyLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.copyrightText}>© 2026 NAMELESS FORGE</Text>
+          <Text style={styles.copyrightSub}>ALL RIGHTS RESERVED</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -147,6 +164,15 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   scroll: { padding: 20, paddingBottom: 40 },
   hero: { alignItems: 'center', marginBottom: 16 },
+  heroLogo: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: '#00f5d450',
+    backgroundColor: '#0b1220',
+  },
   title: { fontFamily: mono, fontSize: 40, fontWeight: '900', color: theme.text, letterSpacing: 8 },
   titleAccent: {
     fontFamily: mono,
@@ -256,5 +282,32 @@ const styles = StyleSheet.create({
     color: theme.textDim,
     marginTop: 20,
     textAlign: 'center',
+  },
+  footerBrand: {
+    alignItems: 'center',
+    marginTop: 28,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(28, 42, 69, 0.4)',
+  },
+  companyLogo: {
+    width: 140,
+    height: 40,
+    marginBottom: 6,
+    opacity: 0.9,
+  },
+  copyrightText: {
+    fontFamily: mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: theme.textDim,
+    fontWeight: '700',
+  },
+  copyrightSub: {
+    fontFamily: mono,
+    fontSize: 8,
+    letterSpacing: 1.5,
+    color: 'rgba(111, 127, 163, 0.6)',
+    marginTop: 2,
   },
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
@@ -80,6 +80,11 @@ export default function LoadingScreen({
         <View style={styles.inner}>
           {/* Logo */}
           <View style={styles.logoBlock}>
+            <Image
+              source={require('../../assets/Fevicon.png')}
+              style={styles.logoImg}
+              resizeMode="contain"
+            />
             <Text style={styles.logoTop}>SHAKE</Text>
             <Text style={styles.logoBot}>WAVES</Text>
           </View>
@@ -136,6 +141,15 @@ const styles = StyleSheet.create({
     gap: 18,
   },
   logoBlock: { alignItems: 'center', marginBottom: 4 },
+  logoImg: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginBottom: 8,
+    borderWidth: 1.5,
+    borderColor: '#00f5d450',
+    backgroundColor: '#0b1220',
+  },
   logoTop: {
     fontFamily: mono,
     fontSize: 42,
