@@ -6,10 +6,21 @@ interface InstrumentContextType {
   setSelectedInstrument: (inst: InstrumentId) => void;
 }
 
+let activeSelectedInstrument: InstrumentId = 'piano';
+
+export function getSelectedInstrument(): InstrumentId {
+  return activeSelectedInstrument;
+}
+
 const InstrumentContext = createContext<InstrumentContextType | null>(null);
 
 export function InstrumentProvider({ children }: { children: ReactNode }) {
-  const [selectedInstrument, setSelectedInstrument] = useState<InstrumentId>('piano');
+  const [selectedInstrument, setSelectedInstrumentState] = useState<InstrumentId>(activeSelectedInstrument);
+
+  const setSelectedInstrument = (inst: InstrumentId) => {
+    activeSelectedInstrument = inst;
+    setSelectedInstrumentState(inst);
+  };
 
   return (
     <InstrumentContext.Provider value={{ selectedInstrument, setSelectedInstrument }}>

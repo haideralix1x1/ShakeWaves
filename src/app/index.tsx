@@ -66,7 +66,7 @@ export default function Home() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.content}>
         <View style={styles.hero}>
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <Image
@@ -81,7 +81,7 @@ export default function Home() {
         </View>
 
         <View style={styles.stage}>
-          <Waveform data={animated} color={chosenObj.color || theme.target} width={300} height={120} strokeWidth={2} />
+          <Waveform data={animated} color={chosenObj.color || theme.target} width={280} height={70} strokeWidth={2} />
         </View>
 
         {/* ── Instrument Selection Before Game Start ── */}
@@ -94,8 +94,8 @@ export default function Home() {
           </View>
           <Text style={styles.pickerDesc}>
             {selectedInstrument === 'mix'
-              ? 'Mix Mode: Each node uses a blended instrument for rich multi-instrument harmonies.'
-              : `Play all melodies tuned in authentic ${chosenObj.label} acoustics.`}
+              ? 'Mix Mode: Blend multiple instruments to build melodies.'
+              : `Acoustic ${chosenObj.label} melody acoustics.`}
           </Text>
 
           <ScrollView
@@ -111,7 +111,7 @@ export default function Home() {
                     styles.instrBtn,
                     isSelected && {
                       borderColor: inst.color,
-                      backgroundColor: `${inst.color}22`,
+                      backgroundColor: `${inst.color}25`,
                       shadowColor: inst.color,
                       shadowOpacity: 0.8,
                       shadowRadius: 8,
@@ -119,8 +119,8 @@ export default function Home() {
                     },
                   ]}
                   onPress={() => {
-                    playUiTap();
                     setSelectedInstrument(inst.id);
+                    playUiTap(inst.id);
                   }}>
                   <Text style={styles.instrEmoji}>{inst.emoji}</Text>
                   <Text
@@ -137,8 +137,8 @@ export default function Home() {
         </View>
 
         <View style={styles.statsRow}>
-          <Stat label="ACTIVE STREAK" value={currentStreak > 0 ? `${currentStreak} 🔥` : '0'} />
-          <Stat label="BEST STREAK" value={bestLevel > 0 ? `${bestLevel} 🏆` : '—'} />
+          <Stat label="STREAK" value={currentStreak > 0 ? `${currentStreak} 🔥` : '0'} />
+          <Stat label="BEST" value={bestLevel > 0 ? `${bestLevel} 🏆` : '—'} />
           <Stat label="SCORE" value={totalScore.toFixed(0)} />
         </View>
 
@@ -149,22 +149,7 @@ export default function Home() {
           />
           <NeonButton label="How to Play" variant="ghost" onPress={handleHowTo} />
         </View>
-
-        <Text style={styles.hint}>
-          Select your music instrument above before starting. Listen to the target tone, shape your wave, and synchronize.
-        </Text>
-
-        {/* ── Nameless Forge Copyright Footer ── */}
-        <View style={styles.footerBrand}>
-          <Image
-            source={require('../../assets/Company-dark.png')}
-            style={styles.companyLogo}
-            resizeMode="contain"
-          />
-          <Text style={styles.copyrightText}>© 2026 NAMELESS FORGE</Text>
-          <Text style={styles.copyrightSub}>ALL RIGHTS RESERVED</Text>
-        </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -180,78 +165,78 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
-  scroll: { padding: 20, paddingBottom: 40 },
-  hero: { alignItems: 'center', marginBottom: 16 },
+  content: { flex: 1, paddingHorizontal: 16, paddingVertical: 10, justifyContent: 'space-between' },
+  hero: { alignItems: 'center', marginBottom: 4 },
   heroLogo: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    marginBottom: 10,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    marginBottom: 6,
     borderWidth: 1.5,
     borderColor: '#00f5d450',
     backgroundColor: '#0b1220',
   },
-  title: { fontFamily: mono, fontSize: 40, fontWeight: '900', color: theme.text, letterSpacing: 8 },
+  title: { fontFamily: mono, fontSize: 28, fontWeight: '900', color: theme.text, letterSpacing: 6 },
   titleAccent: {
     fontFamily: mono,
-    fontSize: 40,
+    fontSize: 28,
     fontWeight: '900',
     color: theme.player,
-    letterSpacing: 8,
-    marginTop: -8,
+    letterSpacing: 6,
+    marginTop: -6,
   },
   subtitle: {
     fontFamily: mono,
-    fontSize: 11,
-    letterSpacing: 5,
+    fontSize: 9,
+    letterSpacing: 4,
     color: theme.textDim,
-    marginTop: 8,
+    marginTop: 4,
   },
   stage: {
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 14,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: theme.panel,
-    padding: 6,
+    padding: 4,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 6,
   },
 
   // Picker Section
   pickerSection: {
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: theme.panel,
-    padding: 12,
-    marginBottom: 16,
+    padding: 10,
+    marginBottom: 6,
   },
   pickerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   pickerTitle: {
     fontFamily: mono,
-    fontSize: 10,
+    fontSize: 9,
     color: theme.textDim,
     letterSpacing: 2,
     fontWeight: '700',
   },
   pickerActiveBadge: {
     fontFamily: mono,
-    fontSize: 10,
+    fontSize: 9,
     letterSpacing: 1.5,
     fontWeight: '700',
   },
   pickerDesc: {
     fontFamily: mono,
-    fontSize: 10,
+    fontSize: 9,
     color: theme.textDim,
-    lineHeight: 15,
-    marginBottom: 10,
+    lineHeight: 13,
+    marginBottom: 6,
   },
   pickerScroll: {
     gap: 8,
@@ -260,72 +245,37 @@ const styles = StyleSheet.create({
   instrBtn: {
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     alignItems: 'center',
-    minWidth: 72,
+    minWidth: 64,
     backgroundColor: 'rgba(255,255,255,0.02)',
   },
   instrEmoji: {
-    fontSize: 22,
-    marginBottom: 4,
+    fontSize: 20,
+    marginBottom: 2,
   },
   instrLabel: {
     fontFamily: mono,
-    fontSize: 9,
+    fontSize: 8.5,
     color: theme.textDim,
     letterSpacing: 1,
     textAlign: 'center',
   },
 
   // Stats
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 6 },
   stat: {
     flex: 1,
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 10,
+    borderRadius: 8,
     backgroundColor: theme.panel,
-    padding: 12,
+    padding: 8,
   },
-  statLabel: { fontFamily: mono, fontSize: 9, color: theme.textDim, letterSpacing: 2 },
-  statValue: { fontFamily: mono, fontSize: 20, color: theme.text, fontWeight: '700', marginTop: 4 },
+  statLabel: { fontFamily: mono, fontSize: 8, color: theme.textDim, letterSpacing: 1.5 },
+  statValue: { fontFamily: mono, fontSize: 16, color: theme.text, fontWeight: '700', marginTop: 2 },
 
-  actions: { gap: 10, marginTop: 4 },
-  hint: {
-    fontFamily: mono,
-    fontSize: 10,
-    lineHeight: 16,
-    color: theme.textDim,
-    marginTop: 20,
-    textAlign: 'center',
-  },
-  footerBrand: {
-    alignItems: 'center',
-    marginTop: 28,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(28, 42, 69, 0.4)',
-  },
-  companyLogo: {
-    width: 140,
-    height: 40,
-    marginBottom: 6,
-    opacity: 0.9,
-  },
-  copyrightText: {
-    fontFamily: mono,
-    fontSize: 9,
-    letterSpacing: 2,
-    color: theme.textDim,
-    fontWeight: '700',
-  },
-  copyrightSub: {
-    fontFamily: mono,
-    fontSize: 8,
-    letterSpacing: 1.5,
-    color: 'rgba(111, 127, 163, 0.6)',
-    marginTop: 2,
-  },
+  actions: { gap: 8 },
 });

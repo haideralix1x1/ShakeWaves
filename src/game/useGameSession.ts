@@ -286,33 +286,10 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
       setActivePlaying('target');
       playClip(targetClip.current, isLooping);
 
-      const stepDur = getStepDuration(speed);
-      const totalSteps = level.targetProfile.length;
-      if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
-      setPlaybackStepIndex(0);
-      const startTime = Date.now();
-
-      playbackTimerRef.current = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const step = Math.floor(elapsed / (stepDur * 1000));
-        if (step < totalSteps) {
-          setPlaybackStepIndex(step);
-        } else {
-          if (isLooping) {
-            setPlaybackStepIndex(step % totalSteps);
-          } else {
-            if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
-            playbackTimerRef.current = null;
-            setPlaybackStepIndex(null);
-          }
-        }
-      }, 25);
-
       if (!isLooping) {
-        const approxDurationMs = (totalSteps * stepDur + 0.6) * 1000;
+        const approxDurationMs = (level.targetProfile.length * getStepDuration(speed) + 0.6) * 1000;
         playingTimer.current = setTimeout(() => {
           setActivePlaying((curr) => (curr === 'target' ? null : curr));
-          setPlaybackStepIndex(null);
         }, approxDurationMs);
       }
     }

@@ -9,6 +9,7 @@ interface Props {
   onDone: () => void;
   message?: string;
   durationMs?: number;
+  showBrand?: boolean;
 }
 
 function makePath(phase: number, width: number, height: number): string {
@@ -32,6 +33,7 @@ export default function LoadingScreen({
   onDone,
   message = 'Synchronizing Waves…',
   durationMs = 450,
+  showBrand = false,
 }: Props) {
   const [progressAnim] = useState(() => new Animated.Value(0));
   const [opacityAnim] = useState(() => new Animated.Value(1));
@@ -117,6 +119,18 @@ export default function LoadingScreen({
 
           <Text style={styles.stageText}>{message}</Text>
         </View>
+
+        {showBrand && (
+          <View style={styles.splashBrand}>
+            <Image
+              source={require('../../assets/Company-dark.png')}
+              style={styles.splashCompanyLogo}
+              resizeMode="contain"
+            />
+            <Text style={styles.splashCopyrightText}>© 2026 NAMELESS FORGE STUDIOS</Text>
+            <Text style={styles.splashCopyrightSub}>ALL RIGHTS RESERVED</Text>
+          </View>
+        )}
       </SafeAreaView>
     </Animated.View>
   );
@@ -133,6 +147,30 @@ const styles = StyleSheet.create({
     zIndex: 9999,
   },
   safe: { flex: 1 },
+  splashBrand: {
+    alignItems: 'center',
+    paddingBottom: 22,
+    gap: 4,
+  },
+  splashCompanyLogo: {
+    width: 140,
+    height: 38,
+    marginBottom: 2,
+    opacity: 0.9,
+  },
+  splashCopyrightText: {
+    fontFamily: mono,
+    fontSize: 9,
+    color: theme.textDim,
+    letterSpacing: 2,
+    fontWeight: '700',
+  },
+  splashCopyrightSub: {
+    fontFamily: mono,
+    fontSize: 7.5,
+    color: 'rgba(255, 255, 255, 0.35)',
+    letterSpacing: 1.5,
+  },
   inner: {
     flex: 1,
     alignItems: 'center',

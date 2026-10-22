@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -118,7 +117,7 @@ export default function Play() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScreenShake ref={shakeRef}>
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.content}>
         {/* ── Header ── */}
         <View style={styles.header}>
           <Pressable onPress={onHome} hitSlop={12}>
@@ -209,7 +208,7 @@ export default function Play() {
                 session.setSelectedPoint(0);
               }}
               color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
-              playbackStep={session.playbackStepIndex}
+              playbackStep={session.activePlaying === 'player' ? session.playbackStepIndex : null}
             />
           </View>
         ) : (
@@ -228,7 +227,7 @@ export default function Play() {
               width={innerWidth}
               height={200}
               color={chosenMeta.color}
-              playbackPoint={session.playbackStepIndex}
+              playbackPoint={session.activePlaying === 'player' ? session.playbackStepIndex : null}
             />
           </View>
         )}
@@ -316,7 +315,7 @@ export default function Play() {
             <Text style={styles.clearText}>{isMixMode ? 'RESET SEQUENCE' : 'RESET WAVE'}</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </View>
     </ScreenShake>
   </SafeAreaView>
   );
@@ -405,7 +404,7 @@ function ResultView({
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScreenShake ref={shakeRef}>
         {passed && <ConfettiParticles count={48} />}
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.resultContent}>
           {/* ── Celebratory Victory Banner ── */}
           {passed && (
             <View style={[styles.victoryBanner, { borderColor: color }]}>
@@ -561,7 +560,7 @@ function ResultView({
                 : 'Match 40% or higher to advance. Tip: use ▶ Target then ▶ Mine and study the wave shape differences.'}
             </Text>
           ) : null}
-        </ScrollView>
+        </View>
       </ScreenShake>
     </SafeAreaView>
   );
@@ -571,7 +570,18 @@ function ResultView({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
-  scroll: { padding: 18, paddingBottom: 48 },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    justifyContent: 'space-between',
+  },
+  resultContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    justifyContent: 'space-between',
+  },
 
   // Header
   header: {
@@ -579,7 +589,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   back: { fontFamily: mono, fontSize: 13, color: theme.textDim, letterSpacing: 2 },
   levelTag: {
@@ -822,30 +832,30 @@ const styles = StyleSheet.create({
   // Result screen
   victoryBanner: {
     borderWidth: 1.5,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 6,
   },
   victoryBannerTitle: {
     fontFamily: mono,
-    fontSize: 11,
-    letterSpacing: 2,
+    fontSize: 10,
+    letterSpacing: 1.5,
     fontWeight: '800',
     textAlign: 'center',
   },
-  resultHead: { alignItems: 'center', marginBottom: 16, paddingTop: 6 },
-  resultLevel: { fontFamily: mono, fontSize: 10, color: theme.textDim, letterSpacing: 2 },
-  gradeBig: { fontFamily: mono, fontSize: 72, fontWeight: '900', marginTop: 4 },
-  percent: { fontFamily: mono, fontSize: 26, fontWeight: '800', letterSpacing: 2, marginTop: -6 },
+  resultHead: { alignItems: 'center', marginBottom: 8, paddingTop: 2 },
+  resultLevel: { fontFamily: mono, fontSize: 9.5, color: theme.textDim, letterSpacing: 1.5 },
+  gradeBig: { fontFamily: mono, fontSize: 52, fontWeight: '900', marginTop: 2 },
+  percent: { fontFamily: mono, fontSize: 20, fontWeight: '800', letterSpacing: 1.5, marginTop: -4 },
   resultVerdict: {
     fontFamily: mono,
-    fontSize: 11,
+    fontSize: 10,
     color: theme.textDim,
-    letterSpacing: 3,
-    marginTop: 8,
+    letterSpacing: 2,
+    marginTop: 4,
     textAlign: 'center',
   },
   compareCard: {

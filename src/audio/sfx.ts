@@ -3,31 +3,14 @@ import * as Haptics from 'expo-haptics';
 import { loadClip, playClip } from './player';
 import { bufferToAudioUri } from './storage';
 import { SAMPLE_RATE } from './wav';
+import { renderNote, type InstrumentId, type SingleInstrumentId } from './instruments';
+import { getSelectedInstrument } from '../game/InstrumentContext';
 
 // Cached clip IDs for instant zero-latency playback
-let uiTapClipId: number | null = null;
+const instrumentTapClips = new Map<InstrumentId, number>();
 let winFanfareClipId: number | null = null;
 let failClipId: number | null = null;
 let streakDingClipId: number | null = null;
-
-/**
- * Synthesizes a snappy, futuristic neon click / pop UI sound.
- */
-function synthUiTap(): Float32Array {
-  const durationSec = 0.045;
-  const n = Math.floor(durationSec * SAMPLE_RATE);
-  const out = new Float32Array(n);
-
-  for (let i = 0; i < n; i++) {
-    const t = i / SAMPLE_RATE;
-    // Fast frequency drop: 880Hz down to 220Hz
-    const freq = 880 * Math.exp(-t * 85);
-    const wave = Math.sin(2 * Math.PI * freq * t);
-    const env = Math.exp(-t * 90);
-    out[i] = wave * env * 0.45;
-  }
-  return out;
-}
 
 /**
  * Synthesizes a triumphant victory fanfare chord arpeggio.
@@ -123,22 +106,46 @@ function synthStreakDing(): Float32Array {
   return out;
 }
 
+function getInstrumentTapClip(inst: InstrumentId): number {
+  const cached = instrumentTapClips.get(inst);
+  if (cached !== undefined) return cached;
+
+  let buffer: Float32Array;
+  if (inst === 'mix') {
+    const dur = 0.22;
+    const n = Math.floor(dur * SAMPLE_RATE);
+    buffer = new Float32Array(n);
+    const p1 = renderNote(523.25, 'piano', 0.16, SAMPLE_RATE, 0.75);
+    const p2 = renderNote(783.99, 'synth', 0.16, SAMPLE_RATE, 0.65);
+    const offset = Math.floor(0.04 * SAMPLE_RATE);
+    for (let i = 0; i < p1.length && i < n; i++) buffer[i] += p1[i];
+    for (let i = 0; i < p2.length && i + offset < n; i++) buffer[i + offset] += p2[i];
+  } else {
+    const freq = inst === 'guitar' ? 440.0 : inst === 'harp' ? 587.33 : 523.25;
+    const dur = inst === 'drum' ? 0.15 : inst === 'guitar' ? 0.22 : 0.20;
+    buffer = renderNote(freq, inst as SingleInstrumentId, dur, SAMPLE_RATE, 0.85);
+  }
+
+  const clipId = loadClip(buffer, bufferToAudioUri);
+  instrumentTapClips.set(inst, clipId);
+  return clipId;
+}
+
 /* ------------------------------- Public SFX API ------------------------------- */
 
 /**
- * Plays a snappy UI tap click + subtle haptic feedback.
+ * Plays a signature UI tap staccato note tuned to the selected instrument + subtle haptic feedback.
  */
-export function playUiTap(): void {
+export function playUiTap(inst?: InstrumentId): void {
   try {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   } catch {
     // optional
   }
   try {
-    if (uiTapClipId === null) {
-      uiTapClipId = loadClip(synthUiTap(), bufferToAudioUri);
-    }
-    playClip(uiTapClipId, false);
+    const targetInst = inst || getSelectedInstrument();
+    const clipId = getInstrumentTapClip(targetInst);
+    playClip(clipId, false);
   } catch (err) {
     console.warn('UI tap SFX error:', err);
   }

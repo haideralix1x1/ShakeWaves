@@ -30,7 +30,8 @@ export default function RootLayout() {
               {!initialLoaded && (
                 <LoadingScreen
                   message="Initializing ShakeWaves…"
-                  durationMs={500}
+                  durationMs={1200}
+                  showBrand={true}
                   onDone={() => setInitialLoaded(true)}
                 />
               )}

@@ -85,14 +85,11 @@ export function InstrumentKeyboardView({
   const currentInstMeta = INSTRUMENTS.find((i) => i.id === currentStepInst)!;
   const currentVal = profile[selectedStep] ?? 0;
 
-  // Active note and instrument during live playback (for sequence highlighting)
-  const playbackNoteVal = (playbackStep !== null && playbackStep !== undefined)
-    ? profile[playbackStep]
-    : null;
-  const playingMixInstId = (isMix && playbackStep !== null && playbackStep !== undefined)
-    ? (activePlaying === 'target'
-        ? (targetStepInstruments?.[playbackStep] || null)
-        : (stepInstruments?.[playbackStep] || null))
+  // Active note and instrument during live playback (for sequence highlighting: MINE ONLY)
+  const isMinePlaying = activePlaying === 'player' && playbackStep !== null && playbackStep !== undefined;
+  const playbackNoteVal = isMinePlaying ? profile[playbackStep] : null;
+  const playingMixInstId = (isMix && isMinePlaying)
+    ? (stepInstruments?.[playbackStep] || null)
     : null;
 
   const handleKeyPress = (val: number) => {
@@ -208,7 +205,7 @@ export function InstrumentKeyboardView({
               {Array.from({ length: totalSteps }).map((_, idx) => {
                 const isRecorded = idx < recordStep;
                 const isCurrentStep = idx === recordStep && !isComplete;
-                const isPlayingThis = playbackStep === idx;
+                const isPlayingThis = isMinePlaying && playbackStep === idx;
                 const assignedInst = isRecorded ? stepInstruments?.[idx] : null;
                 const instMeta = assignedInst ? INSTRUMENTS.find((i) => i.id === assignedInst) : null;
 
@@ -316,7 +313,7 @@ export function InstrumentKeyboardView({
               contentContainerStyle={styles.stepScroll}>
               {profile.map((val, idx) => {
                 const isSelected = selectedStep === idx;
-                const isPlayingThisStep = playbackStep === idx;
+                const isPlayingThisStep = isMinePlaying && playbackStep === idx;
                 const stepInst = instrument as SingleInstrumentId;
                 const stepMeta = INSTRUMENTS.find((i) => i.id === stepInst)!;
                 const noteInfo = valueToPianoKey(val);
