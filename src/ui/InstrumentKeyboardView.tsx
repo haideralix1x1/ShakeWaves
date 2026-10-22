@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -63,17 +62,21 @@ export function InstrumentKeyboardView({
   color = theme.player,
   playbackStep = null,
 }: Props) {
-  const [autoAdvance, setAutoAdvance] = useState(true);
-
   // Active instrument for currently selected step (in Mix Mode, each step has its own instrument)
   const isMix = instrument === 'mix';
   const totalSteps = profile.length;
   const [prevProfileLength, setPrevProfileLength] = useState(profile.length);
   const [recordStep, setRecordStep] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [lastPressedVal, setLastPressedVal] = useState<number | null>(null);
+  const [lastPressedInst, setLastPressedInst] = useState<SingleInstrumentId | null>(null);
 
   if (profile.length !== prevProfileLength) {
     setPrevProfileLength(profile.length);
     setRecordStep(0);
+    setIsRecording(false);
+    setLastPressedVal(null);
+    setLastPressedInst(null);
   }
 
   const isComplete = recordStep >= totalSteps;
@@ -83,7 +86,6 @@ export function InstrumentKeyboardView({
     : (instrument as SingleInstrumentId);
 
   const currentInstMeta = INSTRUMENTS.find((i) => i.id === currentStepInst)!;
-  const currentVal = profile[selectedStep] ?? 0;
 
   // Active note and instrument during live playback (for sequence highlighting: MINE ONLY)
   const isMinePlaying = activePlaying === 'player' && playbackStep !== null && playbackStep !== undefined;
@@ -92,6 +94,28 @@ export function InstrumentKeyboardView({
     ? (stepInstruments?.[playbackStep] || null)
     : null;
 
+  const toggleRecording = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {
+      // Haptics optional
+    }
+    playUiTap();
+
+    if (activePlaying) {
+      onResetCycle?.();
+    }
+
+    setIsRecording((prev) => {
+      const next = !prev;
+      if (next && recordStep >= totalSteps) {
+        setRecordStep(0);
+        onSelectStep(0);
+      }
+      return next;
+    });
+  };
+
   const handleKeyPress = (val: number) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -99,24 +123,63 @@ export function InstrumentKeyboardView({
       // Haptics optional
     }
 
-    onNoteChange(selectedStep, val);
-    onPlayNote(val, selectedStep, currentStepInst);
+    // Always highlight the button the user is actually pressing!
+    setLastPressedVal(val);
 
-    if (autoAdvance && selectedStep < profile.length - 1) {
-      onSelectStep(selectedStep + 1);
+    // If currently playing audio, stop it
+    if (activePlaying) {
+      onResetCycle?.();
+    }
+
+    // TEST MODE ONLY: if recording is OFF, freely play the sound without modifying sequence!
+    if (!isRecording) {
+      onPlayNote(val, selectedStep, currentStepInst);
+      return;
+    }
+
+    // RECORDING MODE:
+    let targetStep = recordStep;
+    if (targetStep >= totalSteps) {
+      targetStep = 0;
+    }
+
+    // 1. Record note for target step
+    onNoteChange(targetStep, val);
+    onSelectStep(targetStep);
+
+    // 2. Play note for target step with the current instrument
+    onPlayNote(val, targetStep, currentStepInst);
+
+    const nextStep = targetStep + 1;
+    setRecordStep(nextStep);
+
+    // 3. If cycle completed, automatically trigger playback of "Mine" and return to test mode
+    if (nextStep >= totalSteps) {
+      setIsRecording(false);
+      setTimeout(() => {
+        onAutoPlay?.();
+      }, 280);
     }
   };
 
-  const handleStepSelect = (idx: number) => {
+  const handleStepSlotPress = (idx: number) => {
     try {
       Haptics.selectionAsync();
     } catch {
       // Haptics optional
     }
+    if (activePlaying) {
+      onResetCycle?.();
+    }
+    setRecordStep(idx);
     onSelectStep(idx);
     const stepVal = profile[idx] ?? 0;
     const stepInst = isMix ? (stepInstruments?.[idx] || 'piano') : (instrument as SingleInstrumentId);
     onPlayNote(stepVal, idx, stepInst);
+    setLastPressedVal(stepVal);
+    if (isMix && stepInstruments?.[idx]) {
+      setLastPressedInst(stepInstruments[idx]);
+    }
   };
 
   const handleMixInstrumentPress = (instId: SingleInstrumentId) => {
@@ -126,12 +189,22 @@ export function InstrumentKeyboardView({
       // Haptics optional
     }
 
+    // Always highlight the instrument button the user is actually pressing!
+    setLastPressedInst(instId);
+
     // If currently playing audio, stop it
     if (activePlaying) {
       onResetCycle?.();
     }
 
-    // Determine target step: if already complete, restart from step 0
+    // TEST MODE ONLY: if recording is OFF, freely preview instrument sound without recording!
+    if (!isRecording) {
+      const noteVal = profile[selectedStep] ?? 0;
+      onPlayNote(noteVal, selectedStep, instId);
+      return;
+    }
+
+    // RECORDING MODE:
     let targetStep = recordStep;
     if (targetStep >= totalSteps) {
       targetStep = 0;
@@ -148,8 +221,9 @@ export function InstrumentKeyboardView({
     const nextStep = targetStep + 1;
     setRecordStep(nextStep);
 
-    // 3. If cycle completed, automatically trigger playback of "Mine"
+    // 3. If cycle completed, automatically trigger playback of "Mine" and return to test mode
     if (nextStep >= totalSteps) {
+      setIsRecording(false);
       setTimeout(() => {
         onAutoPlay?.();
       }, 280);
@@ -165,6 +239,9 @@ export function InstrumentKeyboardView({
     playUiTap();
     setRecordStep(0);
     onSelectStep(0);
+    setIsRecording(false);
+    setLastPressedVal(null);
+    setLastPressedInst(null);
     onResetCycle?.();
   };
 
@@ -175,43 +252,59 @@ export function InstrumentKeyboardView({
           {/* ── Cycle Progress Bar ── */}
           <View style={styles.mixCycleBar}>
             <View style={styles.mixCycleHeader}>
-              <View>
-                <Text style={styles.mixCycleTitle}>
-                  {isComplete
-                    ? (activePlaying === 'player'
-                        ? '▶ PLAYING SEQUENCE'
-                        : '✓ CYCLE COMPLETE')
-                    : `STEP ${recordStep + 1} OF ${totalSteps}`}
+              <View style={styles.mixCycleInfo}>
+                <Text style={styles.mixCycleTitle} numberOfLines={1}>
+                  {isMinePlaying
+                    ? '▶ PLAYING SEQUENCE'
+                    : isRecording
+                    ? `● RECORDING: STEP ${recordStep + 1} OF ${totalSteps}`
+                    : isComplete
+                    ? '✓ CYCLE COMPLETE'
+                    : 'TEST MODE (REC OFF)'}
                 </Text>
-                <Text style={styles.mixCycleSub}>
-                  {isComplete
-                    ? (activePlaying === 'player'
-                        ? 'Listening to your tune · Tap instrument to re-record'
-                        : 'Cycle ready! Tap any instrument to record again')
-                    : `Tap instrument button to set step #${recordStep + 1}`}
+                <Text style={styles.mixCycleSub} numberOfLines={1}>
+                  {isMinePlaying
+                    ? 'Playing melody · Tap to test sounds'
+                    : isRecording
+                    ? `Tap instrument to record step #${recordStep + 1}`
+                    : isComplete
+                    ? 'Test sounds freely · Tap ● REC to re-record'
+                    : 'Test sounds freely · Tap ● REC to record'}
                 </Text>
               </View>
 
-              <Pressable
-                style={styles.mixResetBtn}
-                onPress={handleResetCycle}
-                hitSlop={8}>
-                <Text style={styles.mixResetBtnText}>↺ RESET</Text>
-              </Pressable>
+              <View style={styles.mixCycleActions}>
+                <Pressable
+                  style={[styles.mixRecBtn, isRecording && styles.mixRecBtnActive]}
+                  onPress={toggleRecording}
+                  hitSlop={8}>
+                  <Text style={[styles.mixRecBtnText, isRecording && styles.mixRecBtnTextActive]}>
+                    {isRecording ? '● REC ON' : '⏺ REC'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.mixResetBtn}
+                  onPress={handleResetCycle}
+                  hitSlop={8}>
+                  <Text style={styles.mixResetBtnText}>↺ RESET</Text>
+                </Pressable>
+              </View>
             </View>
 
-            {/* Step slots showing recorded instruments */}
+            {/* Step slots showing recorded instruments (all in row without scrolling, icons only) */}
             <View style={styles.mixSlotsRow}>
               {Array.from({ length: totalSteps }).map((_, idx) => {
                 const isRecorded = idx < recordStep;
-                const isCurrentStep = idx === recordStep && !isComplete;
+                const isCurrentStep = idx === recordStep && isRecording && !isComplete;
                 const isPlayingThis = isMinePlaying && playbackStep === idx;
                 const assignedInst = isRecorded ? stepInstruments?.[idx] : null;
                 const instMeta = assignedInst ? INSTRUMENTS.find((i) => i.id === assignedInst) : null;
 
                 return (
-                  <View
+                  <Pressable
                     key={idx}
+                    onPress={() => handleStepSlotPress(idx)}
                     style={[
                       styles.mixSlot,
                       isRecorded && {
@@ -224,23 +317,17 @@ export function InstrumentKeyboardView({
                     <Text
                       style={[
                         styles.mixSlotText,
-                        isRecorded && { color: instMeta?.color || theme.player, fontWeight: '800' },
                         isPlayingThis && styles.mixSlotPlayingText,
+                        isRecorded && styles.mixSlotEmoji,
+                        isRecorded && { color: instMeta?.color || theme.player },
                       ]}>
-                      {isPlayingThis
+                      {isPlayingThis && !isRecorded
                         ? '▶'
                         : isRecorded
                         ? (instMeta?.emoji || '✓')
                         : `#${idx + 1}`}
                     </Text>
-                    {isRecorded && instMeta && (
-                      <Text
-                        style={[styles.mixSlotLabel, { color: instMeta.color }]}
-                        numberOfLines={1}>
-                        {instMeta.label.toUpperCase()}
-                      </Text>
-                    )}
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>
@@ -251,13 +338,19 @@ export function InstrumentKeyboardView({
             {SINGLE_INSTRUMENTS.map((instId) => {
               const meta = INSTRUMENTS.find((i) => i.id === instId)!;
               const isPlayingNow = playingMixInstId === instId;
+              const isPressed = lastPressedInst === instId;
 
               return (
                 <Pressable
                   key={instId}
                   style={[
                     styles.mixCard,
-                    { borderColor: isPlayingNow ? '#00f5d4' : theme.border },
+                    { borderColor: theme.border },
+                    isPressed && {
+                      borderColor: meta.color,
+                      backgroundColor: `${meta.color}25`,
+                      borderWidth: 2,
+                    },
                     isPlayingNow && {
                       borderColor: '#00f5d4',
                       backgroundColor: `${meta.color}50`,
@@ -276,6 +369,7 @@ export function InstrumentKeyboardView({
                   <Text
                     style={[
                       styles.mixCardLabel,
+                      isPressed && { color: meta.color, fontWeight: '900' },
                       isPlayingNow && { color: '#00f5d4', fontWeight: '900' },
                     ]}>
                     {meta.label.toUpperCase()}
@@ -284,6 +378,7 @@ export function InstrumentKeyboardView({
                     style={[
                       styles.mixCardDot,
                       { backgroundColor: meta.color },
+                      isPressed && { transform: [{ scale: 1.4 }] },
                       isPlayingNow && { backgroundColor: '#00f5d4', transform: [{ scale: 1.4 }] },
                     ]}
                   />
@@ -293,85 +388,113 @@ export function InstrumentKeyboardView({
           </View>
         </View>
       ) : (
-        <>
-          {/* ── 1. Sequence Step Tracker (Single Instrument Modes Only) ── */}
-          <View style={styles.stepHeader}>
-            <View style={styles.stepTitleRow}>
-              <Text style={styles.sectionLabel}>STEP SEQUENCE</Text>
-              <Pressable
-                style={[styles.autoAdvanceBtn, autoAdvance && styles.autoAdvanceBtnActive]}
-                onPress={() => setAutoAdvance((p) => !p)}>
-                <Text style={[styles.autoAdvanceText, autoAdvance && styles.autoAdvanceTextActive]}>
-                  AUTO-NEXT: {autoAdvance ? 'ON ⏩' : 'OFF'}
+        <View style={styles.mixWrap}>
+          {/* ── Cycle Progress Bar (Single Instrument Modes) ── */}
+          <View style={styles.mixCycleBar}>
+            <View style={styles.mixCycleHeader}>
+              <View style={styles.mixCycleInfo}>
+                <Text style={styles.mixCycleTitle} numberOfLines={1}>
+                  {isMinePlaying
+                    ? '▶ PLAYING SEQUENCE'
+                    : isRecording
+                    ? `● RECORDING: STEP ${recordStep + 1} OF ${totalSteps}`
+                    : isComplete
+                    ? '✓ CYCLE COMPLETE'
+                    : 'TEST MODE (REC OFF)'}
                 </Text>
-              </Pressable>
+                <Text style={styles.mixCycleSub} numberOfLines={1}>
+                  {isMinePlaying
+                    ? 'Playing melody · Tap to test sounds'
+                    : isRecording
+                    ? currentStepInst === 'drum'
+                      ? `Tap drum pad for step #${recordStep + 1}`
+                      : currentStepInst === 'guitar'
+                      ? `Tap string for step #${recordStep + 1}`
+                      : currentStepInst === 'xylophone'
+                      ? `Tap bar for step #${recordStep + 1}`
+                      : `Tap note key for step #${recordStep + 1}`
+                    : isComplete
+                    ? 'Test sounds freely · Tap ● REC to re-record'
+                    : 'Test sounds freely · Tap ● REC to record'}
+                </Text>
+              </View>
+
+              <View style={styles.mixCycleActions}>
+                <Pressable
+                  style={[styles.mixRecBtn, isRecording && styles.mixRecBtnActive]}
+                  onPress={toggleRecording}
+                  hitSlop={8}>
+                  <Text style={[styles.mixRecBtnText, isRecording && styles.mixRecBtnTextActive]}>
+                    {isRecording ? '● REC ON' : '⏺ REC'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.mixResetBtn}
+                  onPress={handleResetCycle}
+                  hitSlop={8}>
+                  <Text style={styles.mixResetBtnText}>↺ RESET</Text>
+                </Pressable>
+              </View>
             </View>
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.stepScroll}>
+            {/* Step slots showing recorded notes/pads (in row without scrolling) */}
+            <View style={styles.mixSlotsRow}>
               {profile.map((val, idx) => {
-                const isSelected = selectedStep === idx;
+                const isRecorded = idx < recordStep;
+                const isCurrentStep = idx === recordStep && isRecording && !isComplete;
                 const isPlayingThisStep = isMinePlaying && playbackStep === idx;
-                const stepInst = instrument as SingleInstrumentId;
-                const stepMeta = INSTRUMENTS.find((i) => i.id === stepInst)!;
+                const stepMeta = currentInstMeta;
                 const noteInfo = valueToPianoKey(val);
 
                 let noteLabel = noteInfo.note;
-                if (stepInst === 'drum') {
+                let drumEmoji: string | null = null;
+                if (currentStepInst === 'drum') {
                   const drumMatch = DRUM_PADS.find((d) => Math.abs(d.value - val) < 0.15);
-                  if (drumMatch) noteLabel = drumMatch.label;
+                  if (drumMatch) {
+                    noteLabel = drumMatch.label;
+                    drumEmoji = drumMatch.emoji;
+                  }
                 }
 
                 return (
                   <Pressable
                     key={`step-${idx}`}
+                    onPress={() => handleStepSlotPress(idx)}
                     style={[
-                      styles.stepPill,
-                      isSelected && {
+                      styles.mixSlot,
+                      isRecorded && {
                         borderColor: stepMeta.color,
-                        backgroundColor: `${stepMeta.color}25`,
-                        transform: [{ scale: 1.05 }],
+                        backgroundColor: `${stepMeta.color}20`,
                       },
-                      isPlayingThisStep && {
-                        borderColor: '#00f5d4',
-                        backgroundColor: 'rgba(0, 245, 212, 0.4)',
-                        transform: [{ scale: 1.12 }],
-                        borderWidth: 2,
-                        zIndex: 10,
-                      },
-                    ]}
-                    onPress={() => handleStepSelect(idx)}>
+                      isCurrentStep && styles.mixSlotCurrent,
+                      isPlayingThisStep && styles.mixSlotPlaying,
+                    ]}>
                     <Text
                       style={[
-                        styles.stepNum,
-                        isSelected && { color: stepMeta.color, fontWeight: '800' },
-                        isPlayingThisStep && { color: '#00f5d4', fontWeight: '900' },
-                      ]}>
-                      #{idx + 1}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.stepNote,
-                        isSelected && { color: stepMeta.color, fontWeight: '700' },
-                        isPlayingThisStep && { color: '#00f5d4', fontWeight: '900' },
+                        styles.mixSlotText,
+                        isPlayingThisStep && styles.mixSlotPlayingText,
+                        isRecorded && drumEmoji ? styles.mixSlotEmoji : styles.stepSlotNoteText,
+                        isRecorded && { color: stepMeta.color },
                       ]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit>
-                      {noteLabel}
+                      numberOfLines={1}>
+                      {isPlayingThisStep && !isRecorded
+                        ? '▶'
+                        : isRecorded
+                        ? (drumEmoji || noteLabel)
+                        : `#${idx + 1}`}
                     </Text>
                   </Pressable>
                 );
               })}
-            </ScrollView>
+            </View>
           </View>
 
-          {/* ── 2. Single Instrument Detailed Key Surface ── */}
+          {/* ── Single Instrument Detailed Key Surface ── */}
           <View style={styles.keyboardSurface}>
             {currentStepInst === 'piano' && (
               <PianoKeyboard
-                activeValue={currentVal}
+                activeValue={lastPressedVal}
                 playbackValue={playbackNoteVal}
                 onPressKey={handleKeyPress}
                 accentColor={currentInstMeta.color}
@@ -380,7 +503,7 @@ export function InstrumentKeyboardView({
 
             {currentStepInst === 'drum' && (
               <DrumPads
-                activeValue={currentVal}
+                activeValue={lastPressedVal}
                 playbackValue={playbackNoteVal}
                 onPressPad={handleKeyPress}
                 accentColor={currentInstMeta.color}
@@ -389,7 +512,7 @@ export function InstrumentKeyboardView({
 
             {currentStepInst === 'guitar' && (
               <GuitarFretboard
-                activeValue={currentVal}
+                activeValue={lastPressedVal}
                 playbackValue={playbackNoteVal}
                 onPressString={handleKeyPress}
                 accentColor={currentInstMeta.color}
@@ -398,7 +521,7 @@ export function InstrumentKeyboardView({
 
             {currentStepInst === 'xylophone' && (
               <XylophoneBars
-                activeValue={currentVal}
+                activeValue={lastPressedVal}
                 playbackValue={playbackNoteVal}
                 onPressBar={handleKeyPress}
                 accentColor={currentInstMeta.color}
@@ -410,7 +533,7 @@ export function InstrumentKeyboardView({
               currentStepInst !== 'guitar' &&
               currentStepInst !== 'xylophone' && (
                 <MelodicPads
-                  activeValue={currentVal}
+                  activeValue={lastPressedVal}
                   playbackValue={playbackNoteVal}
                   onPressKey={handleKeyPress}
                   accentColor={currentInstMeta.color}
@@ -418,7 +541,7 @@ export function InstrumentKeyboardView({
                 />
               )}
           </View>
-        </>
+        </View>
       )}
     </View>
   );
@@ -432,7 +555,7 @@ function PianoKeyboard({
   onPressKey,
   accentColor,
 }: {
-  activeValue: number;
+  activeValue: number | null;
   playbackValue?: number | null;
   onPressKey: (val: number) => void;
   accentColor: string;
@@ -440,11 +563,11 @@ function PianoKeyboard({
   return (
     <View style={styles.pianoWrap}>
       <Text style={styles.surfaceHint}>
-        TAP A PIANO KEY TO RECORD PITCH AT THIS STEP
+        TAP A PIANO KEY TO TEST OR RECORD PITCH
       </Text>
       <View style={styles.pianoKeysRow}>
         {PIANO_KEYS.map((k) => {
-          const isActive = Math.abs(k.value - activeValue) < 0.12;
+          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.12;
           const isPlayingThisKey = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
           return (
             <Pressable
@@ -498,7 +621,7 @@ function DrumPads({
   onPressPad,
   accentColor,
 }: {
-  activeValue: number;
+  activeValue: number | null;
   playbackValue?: number | null;
   onPressPad: (val: number) => void;
   accentColor: string;
@@ -506,11 +629,11 @@ function DrumPads({
   return (
     <View style={styles.drumWrap}>
       <Text style={styles.surfaceHint}>
-        TAP A DRUM PAD TO RECORD PERCUSSION AT THIS STEP
+        TAP A DRUM PAD TO TEST OR RECORD PERCUSSION
       </Text>
       <View style={styles.drumGrid}>
         {DRUM_PADS.map((pad) => {
-          const isActive = Math.abs(pad.value - activeValue) < 0.12;
+          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(pad.value - activeValue) < 0.12;
           const isPlayingThisPad = playbackValue !== null && playbackValue !== undefined && Math.abs(pad.value - playbackValue) < 0.12;
           return (
             <Pressable
@@ -556,7 +679,7 @@ function GuitarFretboard({
   onPressString,
   accentColor,
 }: {
-  activeValue: number;
+  activeValue: number | null;
   playbackValue?: number | null;
   onPressString: (val: number) => void;
   accentColor: string;
@@ -564,11 +687,11 @@ function GuitarFretboard({
   return (
     <View style={styles.guitarWrap}>
       <Text style={styles.surfaceHint}>
-        TAP AN ACOUSTIC STRING TO STRUM NOTE AT THIS STEP
+        TAP AN ACOUSTIC STRING TO TEST OR RECORD NOTE
       </Text>
       <View style={styles.guitarStringsList}>
         {PIANO_KEYS.map((k, i) => {
-          const isActive = Math.abs(k.value - activeValue) < 0.12;
+          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.12;
           const isPlayingThisFret = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
           const stringGirth = Math.max(1.5, 4.5 - i * 0.35);
           return (
@@ -633,7 +756,7 @@ function XylophoneBars({
   onPressBar,
   accentColor,
 }: {
-  activeValue: number;
+  activeValue: number | null;
   playbackValue?: number | null;
   onPressBar: (val: number) => void;
   accentColor: string;
@@ -641,11 +764,11 @@ function XylophoneBars({
   return (
     <View style={styles.xyloWrap}>
       <Text style={styles.surfaceHint}>
-        TAP A RESONANT CHIME BAR AT THIS STEP
+        TAP A RESONANT CHIME BAR TO TEST OR RECORD NOTE
       </Text>
       <View style={styles.xyloBarsRow}>
         {PIANO_KEYS.map((k, i) => {
-          const isActive = Math.abs(k.value - activeValue) < 0.12;
+          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.12;
           const isPlayingThisBar = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
           // Lower pitch = longer bar (130px), Higher pitch = shorter bar (75px)
           const barHeight = 135 - i * 7;
@@ -695,7 +818,7 @@ function MelodicPads({
   accentColor,
   instrument,
 }: {
-  activeValue: number;
+  activeValue: number | null;
   playbackValue?: number | null;
   onPressKey: (val: number) => void;
   accentColor: string;
@@ -704,11 +827,11 @@ function MelodicPads({
   return (
     <View style={styles.melodicWrap}>
       <Text style={styles.surfaceHint}>
-        TAP {instrument.label.toUpperCase()} KEYS TO SET STEP PITCH
+        TAP {instrument.label.toUpperCase()} KEYS TO TEST OR RECORD PITCH
       </Text>
       <View style={styles.melodicGrid}>
         {PIANO_KEYS.map((k) => {
-          const isActive = Math.abs(k.value - activeValue) < 0.12;
+          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.12;
           const isPlayingThisPad = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
           return (
             <Pressable
@@ -760,104 +883,31 @@ const styles = StyleSheet.create({
     padding: 2,
   },
 
-  // 1. Step sequence
-  stepHeader: {
-    marginBottom: 12,
-  },
-  stepTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  sectionLabel: {
-    fontFamily: mono,
-    fontSize: 10,
-    color: theme.textDim,
-    letterSpacing: 2,
-    fontWeight: '700',
-  },
-  autoAdvanceBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-  },
-  autoAdvanceBtnActive: {
-    borderColor: '#00f5d4',
-    backgroundColor: '#00f5d415',
-  },
-  autoAdvanceText: {
-    fontFamily: mono,
-    fontSize: 9,
-    color: theme.textDim,
-    letterSpacing: 1,
-  },
-  autoAdvanceTextActive: {
-    color: '#00f5d4',
-    fontWeight: '700',
-  },
-  stepScroll: {
-    gap: 6,
-    paddingVertical: 2,
-  },
-  stepPill: {
-    width: 52,
-    height: 58,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 8,
-    backgroundColor: theme.panel,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 2,
-  },
-  stepPillMix: {
-    width: 60,
-    height: 62,
-    paddingHorizontal: 2,
-  },
-  stepNum: {
-    fontFamily: mono,
-    fontSize: 9,
-    color: theme.textDim,
-    letterSpacing: 1,
-  },
-  stepEmoji: {
-    fontSize: 13,
-    marginVertical: 1,
-  },
-  stepNote: {
-    fontFamily: mono,
-    fontSize: 10,
-    color: theme.text,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  stepNoteMix: {
-    fontSize: 8,
-    letterSpacing: 0.5,
-  },
-
-  // 2. Mix Mode: Cycle bar & big instrument cards
+  // Cycle bar & step slots (used in both Mix and Single Instrument modes)
   mixWrap: {
-    gap: 12,
+    gap: 8,
   },
   mixCycleBar: {
     borderWidth: 1.5,
     borderColor: 'rgba(0, 245, 212, 0.35)',
     borderRadius: 12,
     backgroundColor: 'rgba(0, 245, 212, 0.04)',
-    padding: 12,
-    gap: 10,
+    padding: 8,
+    gap: 6,
+    overflow: 'hidden',
   },
   mixCycleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 6,
+    gap: 8,
+    width: '100%',
+  },
+  mixCycleInfo: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
   },
   mixCycleTitle: {
     fontFamily: mono,
@@ -868,10 +918,46 @@ const styles = StyleSheet.create({
   },
   mixCycleSub: {
     fontFamily: mono,
-    fontSize: 8.5,
+    fontSize: 8,
     color: theme.textDim,
     marginTop: 2,
     letterSpacing: 0.5,
+  },
+  mixCycleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
+  mixRecBtn: {
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 68, 68, 0.45)',
+    backgroundColor: 'rgba(255, 68, 68, 0.08)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mixRecBtnActive: {
+    borderColor: '#ff3333',
+    backgroundColor: 'rgba(255, 51, 51, 0.28)',
+    shadowColor: '#ff3333',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  mixRecBtnText: {
+    fontFamily: mono,
+    fontSize: 9,
+    color: 'rgba(255, 120, 120, 0.85)',
+    letterSpacing: 1,
+    fontWeight: '700',
+  },
+  mixRecBtnTextActive: {
+    color: '#ff4444',
+    fontWeight: '900',
   },
   mixResetBtn: {
     borderWidth: 1,
@@ -880,6 +966,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
+    flexShrink: 0,
+    alignSelf: 'center',
   },
   mixResetBtnText: {
     fontFamily: mono,
@@ -890,19 +978,22 @@ const styles = StyleSheet.create({
   },
   mixSlotsRow: {
     flexDirection: 'row',
-    gap: 6,
-    justifyContent: 'space-between',
+    gap: 4,
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 2,
   },
   mixSlot: {
     flex: 1,
-    height: 48,
+    minWidth: 0,
+    height: 38,
     borderWidth: 1.5,
     borderColor: theme.border,
     borderRadius: 8,
     backgroundColor: theme.panel,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 2,
+    padding: 0,
   },
   mixSlotCurrent: {
     borderColor: '#00f5d4',
@@ -919,57 +1010,61 @@ const styles = StyleSheet.create({
   },
   mixSlotText: {
     fontFamily: mono,
-    fontSize: 12,
+    fontSize: 10,
     color: theme.textDim,
     fontWeight: '700',
+    textAlign: 'center',
+  },
+  mixSlotEmoji: {
+    fontSize: 16,
+  },
+  stepSlotNoteText: {
+    fontFamily: mono,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   mixSlotPlayingText: {
     color: '#00f5d4',
     fontWeight: '900',
-    fontSize: 14,
-  },
-  mixSlotLabel: {
-    fontFamily: mono,
-    fontSize: 7.5,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginTop: 1,
+    fontSize: 12,
   },
 
   // Big Instrument Cards Grid
   mixGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
     justifyContent: 'space-between',
+    rowGap: 8,
+    width: '100%',
   },
   mixCard: {
-    width: '48.5%',
-    height: 72,
+    width: '48%',
+    height: 48,
     borderWidth: 1.5,
     borderColor: theme.border,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: theme.panel,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    gap: 10,
+    paddingHorizontal: 10,
+    gap: 8,
   },
   mixCardEmoji: {
-    fontSize: 26,
+    fontSize: 20,
   },
   mixCardLabel: {
     fontFamily: mono,
-    fontSize: 11,
+    fontSize: 10.5,
     color: theme.text,
-    letterSpacing: 1,
+    letterSpacing: 0.8,
     fontWeight: '700',
     flex: 1,
   },
   mixCardDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
 
   // 3. Surface wrap

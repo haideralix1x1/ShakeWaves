@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -38,6 +39,7 @@ export default function Play() {
   const session = useGameSession(selectedInstrument, currentStreak);
   const [showTarget, setShowTarget] = useState(false);
   const [inputMode, setInputMode] = useState<'keys' | 'wave'>('keys');
+  const [clearCount, setClearCount] = useState(0);
   const recorded = useRef<number | null>(null);
   const shakeRef = useRef<ScreenShakeHandle>(null);
 
@@ -58,6 +60,7 @@ export default function Play() {
       session.next();
       setShowTarget(false);
       recorded.current = null;
+      setClearCount((c) => c + 1);
     }, 'Loading Next Level…');
   };
 
@@ -69,6 +72,7 @@ export default function Play() {
       session.retrySame();
       setShowTarget(false);
       recorded.current = null;
+      setClearCount((c) => c + 1);
     }, 'Resetting…');
   };
 
@@ -192,6 +196,7 @@ export default function Play() {
             )}
 
             <InstrumentKeyboardView
+              key={`${session.instrument}-${session.level.streak}-${clearCount}`}
               profile={session.profile}
               selectedStep={session.selectedPoint}
               onSelectStep={session.setSelectedPoint}
@@ -206,6 +211,7 @@ export default function Play() {
               onResetCycle={() => {
                 session.stopPlayback();
                 session.setSelectedPoint(0);
+                session.clear();
               }}
               color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
               playbackStep={session.activePlaying === 'player' ? session.playbackStepIndex : null}
@@ -311,7 +317,13 @@ export default function Play() {
 
         <View style={styles.submitWrap}>
           <NeonButton label="Synchronize" onPress={onSynchronize} disabled={session.busy} />
-          <Pressable onPress={session.clear} style={styles.clearBtn} hitSlop={8}>
+          <Pressable
+            onPress={() => {
+              session.clear();
+              setClearCount((c) => c + 1);
+            }}
+            style={styles.clearBtn}
+            hitSlop={8}>
             <Text style={styles.clearText}>{isMixMode ? 'RESET SEQUENCE' : 'RESET WAVE'}</Text>
           </Pressable>
         </View>
@@ -444,60 +456,65 @@ function ResultView({
           {isMixMode && targetNodeInstruments && playerNodeInstruments ? (
             <View style={styles.mixCompareCard}>
               <Text style={styles.mixCompareTitle}>INSTRUMENT SEQUENCE COMPARISON</Text>
-              <View style={styles.mixCompareList}>
-                {targetNodeInstruments.map((targetInst, idx) => {
-                  const playerInst = playerNodeInstruments[idx] || 'piano';
-                  const isMatch = targetInst === playerInst;
-                  const targetMeta = INSTRUMENTS.find((i) => i.id === targetInst)!;
-                  const playerMeta = INSTRUMENTS.find((i) => i.id === playerInst)!;
-                  return (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.mixStepRow,
-                        isMatch ? styles.mixStepMatch : styles.mixStepMismatch,
-                      ]}>
-                      <View style={styles.mixStepNumBadge}>
-                        <Text style={styles.mixStepNumText}>#{idx + 1}</Text>
-                      </View>
-
-                      <View style={styles.mixStepCol}>
-                        <Text style={styles.mixStepColLabel}>TARGET</Text>
-                        <Text style={[styles.mixStepVal, { color: targetMeta.color }]}>
-                          {targetMeta.emoji} {targetMeta.label.toUpperCase()}
-                        </Text>
-                      </View>
-
-                      <Text style={styles.mixStepVs}>vs</Text>
-
-                      <View style={styles.mixStepCol}>
-                        <Text style={styles.mixStepColLabel}>YOURS</Text>
-                        <Text style={[styles.mixStepVal, { color: playerMeta.color }]}>
-                          {playerMeta.emoji} {playerMeta.label.toUpperCase()}
-                        </Text>
-                      </View>
-
+              <ScrollView
+                style={styles.mixCompareScroll}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={false}>
+                <View style={styles.mixCompareList}>
+                  {targetNodeInstruments.map((targetInst, idx) => {
+                    const playerInst = playerNodeInstruments[idx] || 'piano';
+                    const isMatch = targetInst === playerInst;
+                    const targetMeta = INSTRUMENTS.find((i) => i.id === targetInst)!;
+                    const playerMeta = INSTRUMENTS.find((i) => i.id === playerInst)!;
+                    return (
                       <View
+                        key={idx}
                         style={[
-                          styles.mixStatusBadge,
-                          {
-                            backgroundColor: isMatch
-                              ? 'rgba(0,245,212,0.18)'
-                              : 'rgba(255,0,127,0.18)',
-                          },
+                          styles.mixStepRow,
+                          isMatch ? styles.mixStepMatch : styles.mixStepMismatch,
                         ]}>
-                        <Text
+                        <View style={styles.mixStepNumBadge}>
+                          <Text style={styles.mixStepNumText}>#{idx + 1}</Text>
+                        </View>
+
+                        <View style={styles.mixStepCol}>
+                          <Text style={styles.mixStepColLabel}>TARGET</Text>
+                          <Text style={[styles.mixStepVal, { color: targetMeta.color }]}>
+                            {targetMeta.emoji} {targetMeta.label.toUpperCase()}
+                          </Text>
+                        </View>
+
+                        <Text style={styles.mixStepVs}>vs</Text>
+
+                        <View style={styles.mixStepCol}>
+                          <Text style={styles.mixStepColLabel}>YOURS</Text>
+                          <Text style={[styles.mixStepVal, { color: playerMeta.color }]}>
+                            {playerMeta.emoji} {playerMeta.label.toUpperCase()}
+                          </Text>
+                        </View>
+
+                        <View
                           style={[
-                            styles.mixStatusText,
-                            { color: isMatch ? '#00f5d4' : '#ff007f' },
+                            styles.mixStatusBadge,
+                            {
+                              backgroundColor: isMatch
+                                ? 'rgba(0,245,212,0.18)'
+                                : 'rgba(255,0,127,0.18)',
+                            },
                           ]}>
-                          {isMatch ? '✓' : '✗'}
-                        </Text>
+                          <Text
+                            style={[
+                              styles.mixStatusText,
+                              { color: isMatch ? '#00f5d4' : '#ff007f' },
+                            ]}>
+                            {isMatch ? '✓' : '✗'}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  );
-                })}
-              </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
             </View>
           ) : (
             <View style={styles.compareCard}>
@@ -623,9 +640,9 @@ const styles = StyleSheet.create({
   },
 
   // Phase
-  phaseRow: { marginTop: 10, marginBottom: 8 },
-  phaseName: { fontFamily: mono, fontSize: 15, color: theme.text, letterSpacing: 2.5, fontWeight: '800' },
-  phaseDesc: { fontFamily: mono, fontSize: 10, color: theme.textDim, marginTop: 2, lineHeight: 15 },
+  phaseRow: { marginTop: 4, marginBottom: 4 },
+  phaseName: { fontFamily: mono, fontSize: 13, color: theme.text, letterSpacing: 2, fontWeight: '800' },
+  phaseDesc: { fontFamily: mono, fontSize: 9.5, color: theme.textDim, marginTop: 2, lineHeight: 14 },
 
   // Mix Mode per-node customizer
   mixCard: {
@@ -733,8 +750,8 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     borderRadius: 14,
     backgroundColor: theme.panel,
-    padding: 10,
-    marginBottom: 10,
+    padding: 8,
+    marginBottom: 6,
   },
   stageHeader: {
     flexDirection: 'row',
@@ -825,8 +842,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   peek: { alignItems: 'center', paddingVertical: 10 },
   peekText: { fontFamily: mono, fontSize: 10, color: theme.textDim, letterSpacing: 1 },
-  submitWrap: { marginTop: 6, gap: 10 },
-  clearBtn: { alignItems: 'center', paddingVertical: 6 },
+  submitWrap: { marginTop: 4, gap: 6 },
+  clearBtn: { alignItems: 'center', paddingVertical: 4 },
   clearText: { fontFamily: mono, fontSize: 10, color: theme.textDim, letterSpacing: 2 },
 
   // Result screen
@@ -873,7 +890,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: theme.panel,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  mixCompareScroll: {
+    maxHeight: 180,
   },
   mixCompareTitle: {
     fontFamily: mono,
@@ -950,7 +970,7 @@ const styles = StyleSheet.create({
   },
   legend: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   legendItem: { fontFamily: mono, fontSize: 10, letterSpacing: 2 },
-  actions: { gap: 10, marginTop: 14 },
+  actions: { gap: 8, marginTop: 8 },
   failNote: {
     fontFamily: mono,
     fontSize: 10,
