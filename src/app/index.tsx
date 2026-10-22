@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +25,7 @@ import { mono, theme } from '../ui/theme';
 
 export default function Home() {
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
   const { bestLevel, currentStreak, totalScore } = useStats();
 
   const { selectedInstrument, setSelectedInstrument } = useInstrument();
@@ -32,6 +34,7 @@ export default function Home() {
   const pulseAnim = useMemo(() => new Animated.Value(1), []);
 
   const target = useMemo(() => tutorialLevel().targetWaveform, []);
+  const waveformWidth = Math.min(320, windowWidth - 44);
 
   useEffect(() => {
     const id = setInterval(() => setPhase((p) => (p + 1) % 100), 60);
@@ -81,7 +84,7 @@ export default function Home() {
         </View>
 
         <View style={styles.stage}>
-          <Waveform data={animated} color={chosenObj.color || theme.target} width={280} height={70} strokeWidth={2} />
+          <Waveform data={animated} color={chosenObj.color || theme.target} width={waveformWidth} height={80} strokeWidth={2.2} />
         </View>
 
         {/* ── Instrument Selection Before Game Start ── */}
@@ -95,7 +98,7 @@ export default function Home() {
           <Text style={styles.pickerDesc}>
             {selectedInstrument === 'mix'
               ? 'Mix Mode: Blend multiple instruments to build melodies.'
-              : `Acoustic ${chosenObj.label} melody acoustics.`}
+              : `Play all melodies tuned in authentic ${chosenObj.label} acoustics.`}
           </Text>
 
           <ScrollView
@@ -137,8 +140,8 @@ export default function Home() {
         </View>
 
         <View style={styles.statsRow}>
-          <Stat label="STREAK" value={currentStreak > 0 ? `${currentStreak} 🔥` : '0'} />
-          <Stat label="BEST" value={bestLevel > 0 ? `${bestLevel} 🏆` : '—'} />
+          <Stat label="ACTIVE STREAK" value={currentStreak > 0 ? `${currentStreak} 🔥` : '0'} />
+          <Stat label="BEST STREAK" value={bestLevel > 0 ? `${bestLevel} 🏆` : '—'} />
           <Stat label="SCORE" value={totalScore.toFixed(0)} />
         </View>
 
@@ -165,78 +168,82 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
-  content: { flex: 1, paddingHorizontal: 16, paddingVertical: 10, justifyContent: 'space-between' },
-  hero: { alignItems: 'center', marginBottom: 4 },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    justifyContent: 'center',
+    gap: 12,
+  },
+  hero: { alignItems: 'center', marginBottom: 2 },
   heroLogo: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    marginBottom: 6,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    marginBottom: 8,
     borderWidth: 1.5,
     borderColor: '#00f5d450',
     backgroundColor: '#0b1220',
   },
-  title: { fontFamily: mono, fontSize: 28, fontWeight: '900', color: theme.text, letterSpacing: 6 },
+  title: { fontFamily: mono, fontSize: 36, fontWeight: '900', color: theme.text, letterSpacing: 8 },
   titleAccent: {
     fontFamily: mono,
-    fontSize: 28,
+    fontSize: 36,
     fontWeight: '900',
     color: theme.player,
-    letterSpacing: 6,
-    marginTop: -6,
+    letterSpacing: 8,
+    marginTop: -8,
   },
   subtitle: {
     fontFamily: mono,
-    fontSize: 9,
-    letterSpacing: 4,
+    fontSize: 10,
+    letterSpacing: 5,
     color: theme.textDim,
     marginTop: 4,
   },
   stage: {
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: theme.panel,
-    padding: 4,
+    padding: 6,
     alignItems: 'center',
-    marginBottom: 6,
   },
 
   // Picker Section
   pickerSection: {
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: theme.panel,
-    padding: 10,
-    marginBottom: 6,
+    padding: 12,
   },
   pickerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   pickerTitle: {
     fontFamily: mono,
-    fontSize: 9,
+    fontSize: 10,
     color: theme.textDim,
     letterSpacing: 2,
     fontWeight: '700',
   },
   pickerActiveBadge: {
     fontFamily: mono,
-    fontSize: 9,
+    fontSize: 10,
     letterSpacing: 1.5,
     fontWeight: '700',
   },
   pickerDesc: {
     fontFamily: mono,
-    fontSize: 9,
+    fontSize: 9.5,
     color: theme.textDim,
-    lineHeight: 13,
-    marginBottom: 6,
+    lineHeight: 14,
+    marginBottom: 8,
   },
   pickerScroll: {
     gap: 8,
@@ -245,37 +252,37 @@ const styles = StyleSheet.create({
   instrBtn: {
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     alignItems: 'center',
-    minWidth: 64,
+    minWidth: 70,
     backgroundColor: 'rgba(255,255,255,0.02)',
   },
   instrEmoji: {
-    fontSize: 20,
-    marginBottom: 2,
+    fontSize: 22,
+    marginBottom: 4,
   },
   instrLabel: {
     fontFamily: mono,
-    fontSize: 8.5,
+    fontSize: 9,
     color: theme.textDim,
     letterSpacing: 1,
     textAlign: 'center',
   },
 
   // Stats
-  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 6 },
+  statsRow: { flexDirection: 'row', gap: 10 },
   stat: {
     flex: 1,
     borderWidth: 1,
     borderColor: theme.border,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: theme.panel,
-    padding: 8,
+    padding: 10,
   },
-  statLabel: { fontFamily: mono, fontSize: 8, color: theme.textDim, letterSpacing: 1.5 },
-  statValue: { fontFamily: mono, fontSize: 16, color: theme.text, fontWeight: '700', marginTop: 2 },
+  statLabel: { fontFamily: mono, fontSize: 8.5, color: theme.textDim, letterSpacing: 1.5 },
+  statValue: { fontFamily: mono, fontSize: 18, color: theme.text, fontWeight: '700', marginTop: 3 },
 
-  actions: { gap: 8 },
+  actions: { gap: 10, marginTop: 2 },
 });
