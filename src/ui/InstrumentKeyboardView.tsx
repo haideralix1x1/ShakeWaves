@@ -152,99 +152,103 @@ export function InstrumentKeyboardView({
         </ScrollView>
       </View>
 
-      {/* ── 2. Mix Mode: Quick Instrument Selector for Current Step ── */}
-      {isMix && (
-        <View style={styles.mixInstBar}>
-          <View style={styles.mixInstHeader}>
-            <Text style={styles.mixInstTitle}>
-              INSTRUMENT FOR STEP #{selectedStep + 1}:
-            </Text>
-            <Text style={[styles.mixInstActiveName, { color: currentInstMeta.color }]}>
-              {currentInstMeta.emoji} {currentInstMeta.label}
-            </Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.mixInstScroll}>
+      {/* ── 2. Mix Mode: Simple Instrument Buttons ONLY vs Single Instrument Key Surface ── */}
+      {isMix ? (
+        <View style={styles.mixSimpleWrap}>
+          <Text style={styles.surfaceHint}>
+            CHOOSE THE MATCHING INSTRUMENT FOR STEP #{selectedStep + 1}
+          </Text>
+          <View style={styles.mixSimpleGrid}>
             {SINGLE_INSTRUMENTS.map((instId) => {
               const meta = INSTRUMENTS.find((i) => i.id === instId)!;
-              const isCurrent = currentStepInst === instId;
+              const isAssigned = currentStepInst === instId;
               return (
                 <Pressable
                   key={instId}
                   style={[
-                    styles.mixInstBtn,
-                    isCurrent && {
+                    styles.mixSimpleCard,
+                    isAssigned && {
                       borderColor: meta.color,
                       backgroundColor: `${meta.color}30`,
+                      transform: [{ scale: 1.02 }],
                     },
                   ]}
                   onPress={() => {
+                    try {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    } catch {
+                      // Haptics optional
+                    }
                     onStepInstrumentChange?.(selectedStep, instId);
                     onPlayNote(profile[selectedStep] ?? 0, selectedStep, instId);
+                    if (autoAdvance && selectedStep < profile.length - 1) {
+                      onSelectStep(selectedStep + 1);
+                    }
                   }}>
-                  <Text style={styles.mixInstEmoji}>{meta.emoji}</Text>
+                  <Text style={styles.mixSimpleEmoji}>{meta.emoji}</Text>
                   <Text
                     style={[
-                      styles.mixInstLabel,
-                      isCurrent && { color: meta.color, fontWeight: '700' },
+                      styles.mixSimpleLabel,
+                      isAssigned && { color: meta.color, fontWeight: '900' },
                     ]}>
-                    {meta.label}
+                    {meta.label.toUpperCase()}
                   </Text>
+                  {isAssigned && (
+                    <View style={[styles.mixSimpleBadge, { backgroundColor: meta.color }]} />
+                  )}
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
         </View>
-      )}
-
-      {/* ── 3. Active Instrument Key Surface ── */}
-      <View style={styles.keyboardSurface}>
-        {currentStepInst === 'piano' && (
-          <PianoKeyboard
-            activeValue={currentVal}
-            onPressKey={handleKeyPress}
-            accentColor={currentInstMeta.color}
-          />
-        )}
-
-        {currentStepInst === 'drum' && (
-          <DrumPads
-            activeValue={currentVal}
-            onPressPad={handleKeyPress}
-            accentColor={currentInstMeta.color}
-          />
-        )}
-
-        {currentStepInst === 'guitar' && (
-          <GuitarFretboard
-            activeValue={currentVal}
-            onPressString={handleKeyPress}
-            accentColor={currentInstMeta.color}
-          />
-        )}
-
-        {currentStepInst === 'xylophone' && (
-          <XylophoneBars
-            activeValue={currentVal}
-            onPressBar={handleKeyPress}
-            accentColor={currentInstMeta.color}
-          />
-        )}
-
-        {currentStepInst !== 'piano' &&
-          currentStepInst !== 'drum' &&
-          currentStepInst !== 'guitar' &&
-          currentStepInst !== 'xylophone' && (
-            <MelodicPads
+      ) : (
+        /* ── 3. Single Instrument Detailed Key Surface ── */
+        <View style={styles.keyboardSurface}>
+          {currentStepInst === 'piano' && (
+            <PianoKeyboard
               activeValue={currentVal}
               onPressKey={handleKeyPress}
               accentColor={currentInstMeta.color}
-              instrument={currentInstMeta}
             />
           )}
-      </View>
+
+          {currentStepInst === 'drum' && (
+            <DrumPads
+              activeValue={currentVal}
+              onPressPad={handleKeyPress}
+              accentColor={currentInstMeta.color}
+            />
+          )}
+
+          {currentStepInst === 'guitar' && (
+            <GuitarFretboard
+              activeValue={currentVal}
+              onPressString={handleKeyPress}
+              accentColor={currentInstMeta.color}
+            />
+          )}
+
+          {currentStepInst === 'xylophone' && (
+            <XylophoneBars
+              activeValue={currentVal}
+              onPressBar={handleKeyPress}
+              accentColor={currentInstMeta.color}
+            />
+          )}
+
+          {currentStepInst !== 'piano' &&
+            currentStepInst !== 'drum' &&
+            currentStepInst !== 'guitar' &&
+            currentStepInst !== 'xylophone' && (
+              <MelodicPads
+                activeValue={currentVal}
+                onPressKey={handleKeyPress}
+                accentColor={currentInstMeta.color}
+                instrument={currentInstMeta}
+              />
+            )}
+        </View>
+      )}
     </View>
   );
 }
@@ -583,55 +587,47 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // 2. Mix mode instrument selector
-  mixInstBar: {
+  // 2. Mix mode simple instrument selector
+  mixSimpleWrap: {
     borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.015)',
+    padding: 10,
+  },
+  mixSimpleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  mixSimpleCard: {
+    width: '48%',
+    height: 58,
+    borderWidth: 1.5,
     borderColor: theme.border,
     borderRadius: 10,
     backgroundColor: theme.panel,
-    padding: 8,
-    marginBottom: 12,
-  },
-  mixInstHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    paddingHorizontal: 12,
+    gap: 10,
   },
-  mixInstTitle: {
+  mixSimpleEmoji: {
+    fontSize: 22,
+  },
+  mixSimpleLabel: {
     fontFamily: mono,
-    fontSize: 9,
-    color: theme.textDim,
-    letterSpacing: 1.5,
-  },
-  mixInstActiveName: {
-    fontFamily: mono,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-  mixInstScroll: {
-    gap: 6,
-  },
-  mixInstBtn: {
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    alignItems: 'center',
-    minWidth: 54,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-  },
-  mixInstEmoji: {
-    fontSize: 16,
-    marginBottom: 2,
-  },
-  mixInstLabel: {
-    fontFamily: mono,
-    fontSize: 8,
-    color: theme.textDim,
+    fontSize: 10.5,
+    color: theme.text,
     letterSpacing: 1,
+    fontWeight: '700',
+    flex: 1,
+  },
+  mixSimpleBadge: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
 
   // 3. Surface wrap

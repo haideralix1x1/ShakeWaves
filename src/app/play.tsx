@@ -12,7 +12,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   INSTRUMENTS,
-  SINGLE_INSTRUMENTS,
 } from '../audio/instruments';
 import { useInstrument } from '../game/InstrumentContext';
 import { useStats } from '../game/StatsContext';
@@ -127,78 +126,38 @@ export default function Play() {
 
         {/* ── Phase info ── */}
         <View style={styles.phaseRow}>
-          <Text style={styles.phaseName}>{info.name}</Text>
-          <Text style={styles.phaseDesc}>{info.description}</Text>
+          <Text style={styles.phaseName}>
+            {isMixMode ? 'INSTRUMENT ARRANGER' : info.name}
+          </Text>
+          <Text style={styles.phaseDesc}>
+            {isMixMode
+              ? 'Listen to the target tune and assign the matching instrument to each step'
+              : info.description}
+          </Text>
         </View>
 
-        {/* ── Mode Switcher: Waveform vs Keys/Pads ── */}
-        <View style={styles.modeSwitchRow}>
-          <Pressable
-            style={[styles.modeTab, inputMode === 'keys' && styles.modeTabActive]}
-            onPress={() => setInputMode('keys')}>
-            <Text style={[styles.modeTabText, inputMode === 'keys' && styles.modeTabTextActive]}>
-              {session.instrument === 'drum' ? '🥁 DRUM PADS' : '🎹 KEYS MODE'}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.modeTab, inputMode === 'wave' && styles.modeTabActive]}
-            onPress={() => setInputMode('wave')}>
-            <Text style={[styles.modeTabText, inputMode === 'wave' && styles.modeTabTextActive]}>
-              〰 WAVE EDITOR
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* ── Mix Mode: Per-Node Instrument Customizer (in Wave Mode) ── */}
-        {isMixMode && inputMode === 'wave' && (
-          <View style={styles.mixCard}>
-            <View style={styles.mixHeader}>
-              <Text style={styles.mixTitle}>MIX MODE · NODE #{session.selectedPoint + 1}</Text>
-              <Text style={[styles.mixActive, { color: selectedNodeMeta.color }]}>
-                {selectedNodeMeta.emoji} {selectedNodeMeta.label}
+        {/* ── Mode Switcher: Waveform vs Keys/Pads (Single Instrument Modes) ── */}
+        {!isMixMode && (
+          <View style={styles.modeSwitchRow}>
+            <Pressable
+              style={[styles.modeTab, inputMode === 'keys' && styles.modeTabActive]}
+              onPress={() => setInputMode('keys')}>
+              <Text style={[styles.modeTabText, inputMode === 'keys' && styles.modeTabTextActive]}>
+                {session.instrument === 'drum' ? '🥁 DRUM PADS' : '🎹 KEYS MODE'}
               </Text>
-            </View>
-            <Text style={styles.mixSubtitle}>
-              Tap an instrument to hear & assign it to this node:
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.mixScroll}>
-              {SINGLE_INSTRUMENTS.map((instId) => {
-                const meta = INSTRUMENTS.find((i) => i.id === instId)!;
-                const isCurrent = selectedNodeInst === instId;
-                return (
-                  <Pressable
-                    key={instId}
-                    style={[
-                      styles.mixBtn,
-                      isCurrent && {
-                        borderColor: meta.color,
-                        backgroundColor: `${meta.color}25`,
-                      },
-                    ]}
-                    onPress={() => {
-                      session.setPlayerNodeInstrument(session.selectedPoint, instId);
-                      session.playInstrumentPreview(instId);
-                    }}>
-                    <Text style={styles.mixEmoji}>{meta.emoji}</Text>
-                    <Text
-                      style={[
-                        styles.mixLabel,
-                        isCurrent && { color: meta.color, fontWeight: '700' },
-                      ]}>
-                      {meta.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+            </Pressable>
+            <Pressable
+              style={[styles.modeTab, inputMode === 'wave' && styles.modeTabActive]}
+              onPress={() => setInputMode('wave')}>
+              <Text style={[styles.modeTabText, inputMode === 'wave' && styles.modeTabTextActive]}>
+                〰 WAVE EDITOR
+              </Text>
+            </Pressable>
           </View>
         )}
 
         {/* ── Interactive Input Area: Keyboard/Pads OR Waveform ── */}
-        {inputMode === 'keys' ? (
+        {isMixMode || inputMode === 'keys' ? (
           <View style={styles.stageCard}>
             {/* Live mini preview of the current player melody wave */}
             <View style={styles.miniWaveWrap}>
@@ -227,9 +186,7 @@ export default function Play() {
           <View style={styles.stageCard}>
             <View style={styles.stageHeader}>
               <Text style={styles.stageLabel} numberOfLines={1}>
-                {isMixMode
-                  ? `NODE #${session.selectedPoint + 1} (${selectedNodeMeta.emoji} ${selectedNodeMeta.label})`
-                  : `MELODY: ${chosenMeta.emoji} ${chosenMeta.label.toUpperCase()}`}
+                {`MELODY: ${chosenMeta.emoji} ${chosenMeta.label.toUpperCase()}`}
               </Text>
               <Text style={styles.stageHint}>DRAG NODES</Text>
             </View>
@@ -240,7 +197,7 @@ export default function Play() {
               onSelectPoint={session.setSelectedPoint}
               width={innerWidth}
               height={200}
-              color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
+              color={chosenMeta.color}
             />
           </View>
         )}
@@ -367,9 +324,15 @@ function ResultView({
           </Text>
           <Text style={[styles.gradeBig, { color }]}>{result.grade}</Text>
           <Text style={[styles.percent, { color }]}>{result.percent.toFixed(1)}%</Text>
-          <Text style={styles.resultVerdict}>
-            {passed ? 'STREAK CONTINUES!' : result.grade === 'C' ? 'LOCK ACQUIRED' : 'SIGNAL LOST'}
-          </Text>
+          {result.instrumentsMatched !== undefined ? (
+            <Text style={[styles.resultVerdict, { color: theme.text, marginTop: 4 }]}>
+              {`MATCHED: ${result.instrumentsMatched} / ${result.totalInstruments} INSTRUMENTS`}
+            </Text>
+          ) : (
+            <Text style={styles.resultVerdict}>
+              {passed ? 'STREAK CONTINUES!' : result.grade === 'C' ? 'LOCK ACQUIRED' : 'SIGNAL LOST'}
+            </Text>
+          )}
         </View>
 
         {/* ── Compare card ── */}

@@ -1,9 +1,10 @@
+import { SingleInstrumentId } from '../audio/instruments';
 import { buildEvaluationWave, profileToCycle } from '../audio/wave';
 import type { Level } from './levels';
 
 export type Grade = 'S' | 'A' | 'B' | 'C' | 'F';
 
- export interface ScoreResult {
+export interface ScoreResult {
   percent: number;
   grade: Grade;
   match: boolean;
@@ -11,6 +12,8 @@ export type Grade = 'S' | 'A' | 'B' | 'C' | 'F';
   targetEvaluation: Float32Array;
   playerEvaluation: Float32Array;
   playerProfile: number[];
+  instrumentsMatched?: number;
+  totalInstruments?: number;
 }
 
 const CYCLE_TABLE = 512;
@@ -123,5 +126,40 @@ export function scoreLevel(level: Level, playerProfile: number[]): ScoreResult {
     targetEvaluation,
     playerEvaluation,
     playerProfile: playerProfile.slice(),
+  };
+}
+
+/**
+ * Mix Mode Scoring: Evaluates how many instruments in the sequence the player identified correctly.
+ */
+export function scoreMixLevel(
+  targetInstruments: SingleInstrumentId[],
+  playerInstruments: SingleInstrumentId[],
+  level: Level
+): ScoreResult {
+  const n = Math.min(targetInstruments.length, playerInstruments.length);
+  let matched = 0;
+  for (let i = 0; i < n; i++) {
+    if (targetInstruments[i] === playerInstruments[i]) {
+      matched += 1;
+    }
+  }
+
+  const percent = Math.round((matched / n) * 1000) / 10;
+  const grade = gradeFor(percent);
+  const playerCycle = profileToCycle(level.targetProfile, CYCLE_TABLE);
+  const playerEvaluation = buildEvaluationWave(playerCycle, level.cycles);
+  const targetEvaluation = buildEvaluationWave(level.targetCycle, level.cycles);
+
+  return {
+    percent,
+    grade,
+    match: percent >= 40,
+    playerCycle,
+    targetEvaluation,
+    playerEvaluation,
+    playerProfile: level.targetProfile.slice(),
+    instrumentsMatched: matched,
+    totalInstruments: n,
   };
 }
