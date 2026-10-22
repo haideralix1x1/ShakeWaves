@@ -56,12 +56,36 @@ export interface Session {
   playPianoNote: (v: number) => void;
 }
 
+interface InitialGameState {
+  level: Level;
+  profile: number[];
+  targetNodeInstruments: SingleInstrumentId[];
+  playerNodeInstruments: SingleInstrumentId[];
+}
+
+function createInitialGameState(gameInstrument: InstrumentId, startingStreak: number): InitialGameState {
+  const level = generateLevel(startingStreak);
+  const profile = gameInstrument === 'mix' ? level.targetProfile.slice() : startProfile(level.pointCount);
+  const targetNodeInstruments = gameInstrument === 'mix'
+    ? generateCuratedMixForLevel(startingStreak, level.pointCount)
+    : new Array(level.pointCount).fill(gameInstrument as SingleInstrumentId);
+  const playerNodeInstruments = gameInstrument === 'mix'
+    ? new Array(level.pointCount).fill('piano')
+    : new Array(level.pointCount).fill(gameInstrument as SingleInstrumentId);
+
+  return {
+    level,
+    profile,
+    targetNodeInstruments,
+    playerNodeInstruments,
+  };
+}
+
 export function useGameSession(gameInstrument: InstrumentId = 'piano', startingStreak = 0): Session {
-  const [level, setLevel] = useState<Level>(() => generateLevel(startingStreak));
-  const [profile, setProfile] = useState<number[]>(() => {
-    const initLevel = generateLevel(startingStreak);
-    return gameInstrument === 'mix' ? initLevel.targetProfile.slice() : startProfile(initLevel.pointCount);
-  });
+  const [initialState] = useState(() => createInitialGameState(gameInstrument, startingStreak));
+
+  const [level, setLevel] = useState<Level>(initialState.level);
+  const [profile, setProfile] = useState<number[]>(initialState.profile);
   const [result, setResult] = useState<ScoreResult | null>(null);
   const [selectedPoint, setSelectedPoint] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -80,19 +104,12 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     }
   }, []);
 
-  const [targetNodeInstruments, setTargetNodeInstruments] = useState<SingleInstrumentId[]>(() => {
-    if (gameInstrument === 'mix') {
-      return generateCuratedMixForLevel(startingStreak, 9);
-    }
-    return new Array(9).fill(gameInstrument as SingleInstrumentId);
-  });
-
-  const [playerNodeInstruments, setPlayerNodeInstruments] = useState<SingleInstrumentId[]>(() => {
-    if (gameInstrument === 'mix') {
-      return new Array(9).fill('piano');
-    }
-    return new Array(9).fill(gameInstrument as SingleInstrumentId);
-  });
+  const [targetNodeInstruments, setTargetNodeInstruments] = useState<SingleInstrumentId[]>(
+    initialState.targetNodeInstruments
+  );
+  const [playerNodeInstruments, setPlayerNodeInstruments] = useState<SingleInstrumentId[]>(
+    initialState.playerNodeInstruments
+  );
 
   const targetClip = useRef<number | null>(null);
   const playerClip = useRef<number | null>(null);
@@ -105,37 +122,44 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
   }, []);
 
   const playNote = useCallback((v: number, nodeIndex?: number, instOverride?: SingleInstrumentId) => {
-    const key = valueToPianoKey(v);
+    // In mix mode, always use the exact pitch from level.targetProfile for that node
+    const effectiveVal = (gameInstrument === 'mix' && nodeIndex !== undefined && nodeIndex < level.targetProfile.length)
+      ? level.targetProfile[nodeIndex]
+      : v;
+    const key = valueToPianoKey(effectiveVal);
     const activeInst = instOverride || (
       (gameInstrument === 'mix' && nodeIndex !== undefined)
         ? playerNodeInstruments[nodeIndex]
         : (gameInstrument === 'mix' ? 'piano' : (gameInstrument as SingleInstrumentId))
     );
 
+    const dur = activeInst === 'violin' ? 0.65 : 0.45;
     const cacheKey = `${activeInst}_${key.note}`;
     let clipId = singleNoteClips.current.get(cacheKey);
     if (clipId === undefined) {
-      const samples = renderNote(key.freq, activeInst, 0.45);
+      const samples = renderNote(key.freq, activeInst, dur, undefined, 0.75);
       clipId = loadClip(samples, bufferToAudioUri);
       singleNoteClips.current.set(cacheKey, clipId);
     }
     playClip(clipId, false);
-  }, [gameInstrument, playerNodeInstruments]);
+  }, [gameInstrument, level.targetProfile, playerNodeInstruments]);
 
   // Preview an instrument sound directly when tapped in Mix Mode picker
   const playInstrumentPreview = useCallback((inst: SingleInstrumentId) => {
-    // Play a pleasant reference pitch (C4 or current selected node pitch)
-    const val = profile[selectedPoint] ?? 0;
+    const val = (gameInstrument === 'mix' && selectedPoint < level.targetProfile.length)
+      ? level.targetProfile[selectedPoint]
+      : (profile[selectedPoint] ?? 0);
     const key = valueToPianoKey(val);
+    const dur = inst === 'violin' ? 0.65 : 0.45;
     const cacheKey = `${inst}_${key.note}`;
     let clipId = singleNoteClips.current.get(cacheKey);
     if (clipId === undefined) {
-      const samples = renderNote(key.freq, inst, 0.45);
+      const samples = renderNote(key.freq, inst, dur, undefined, 0.75);
       clipId = loadClip(samples, bufferToAudioUri);
       singleNoteClips.current.set(cacheKey, clipId);
     }
     playClip(clipId, false);
-  }, [profile, selectedPoint]);
+  }, [gameInstrument, level.targetProfile, profile, selectedPoint]);
 
   const releasePlayerClip = useCallback(() => {
     if (playerClip.current !== null) {
@@ -196,11 +220,16 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
   }, []);
 
   const clear = useCallback(() => {
-    setProfile(startProfile(level.pointCount));
+    if (gameInstrument === 'mix') {
+      setProfile(level.targetProfile.slice());
+      setPlayerNodeInstruments(new Array(level.pointCount).fill('piano'));
+    } else {
+      setProfile(startProfile(level.pointCount));
+    }
     setResult(null);
     setSelectedPoint(0);
     clearPlayingState();
-  }, [level.pointCount, clearPlayingState]);
+  }, [gameInstrument, level.pointCount, level.targetProfile, clearPlayingState]);
 
   const stopPlayback = useCallback(() => {
     if (targetClip.current !== null) stopClip(targetClip.current);
@@ -260,20 +289,21 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     stopPlayback();
     releasePlayerClip();
     const stepDur = getStepDuration(speed);
+    const melodyProfile = gameInstrument === 'mix' ? level.targetProfile : profile;
     playerClip.current = loadClip(
-      renderTuneWithStepInstruments(profile, playerNodeInstruments, undefined, stepDur),
+      renderTuneWithStepInstruments(melodyProfile, playerNodeInstruments, undefined, stepDur),
       bufferToAudioUri
     );
     setActivePlaying('player');
     playClip(playerClip.current, isLooping);
 
     if (!isLooping) {
-      const approxDurationMs = (profile.length * stepDur + 0.6) * 1000;
+      const approxDurationMs = (melodyProfile.length * stepDur + 0.6) * 1000;
       playingTimer.current = setTimeout(() => {
         setActivePlaying((curr) => (curr === 'player' ? null : curr));
       }, approxDurationMs);
     }
-  }, [activePlaying, profile, playerNodeInstruments, speed, isLooping, getStepDuration, releasePlayerClip, stopPlayback]);
+  }, [activePlaying, gameInstrument, level.targetProfile, profile, playerNodeInstruments, speed, isLooping, getStepDuration, releasePlayerClip, stopPlayback]);
 
   const submit = useCallback(() => {
     if (busy) return;
@@ -285,8 +315,9 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
         : scoreLevel(level, profile);
       setResult(scored);
       releasePlayerClip();
+      const melodyProfile = gameInstrument === 'mix' ? level.targetProfile : profile;
       playerClip.current = loadClip(
-        renderTuneWithStepInstruments(profile, playerNodeInstruments, undefined, getStepDuration(speed)),
+        renderTuneWithStepInstruments(melodyProfile, playerNodeInstruments, undefined, getStepDuration(speed)),
         bufferToAudioUri
       );
     } finally {
