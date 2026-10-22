@@ -20,6 +20,7 @@ import { phaseForLevel } from '../game/levels';
 import { gradeColor } from '../game/scoring';
 import { PlaybackSpeed, useGameSession } from '../game/useGameSession';
 import { useLoadingTransition } from '../ui/LoadingTransitionContext';
+import { InstrumentKeyboardView } from '../ui/InstrumentKeyboardView';
 import { NeonButton } from '../ui/NeonButton';
 import { Waveform } from '../ui/Waveform';
 import { WaveformEditor } from '../ui/WaveformEditor';
@@ -33,6 +34,7 @@ export default function Play() {
   const { transitionTo } = useLoadingTransition();
   const session = useGameSession(selectedInstrument, currentStreak);
   const [showTarget, setShowTarget] = useState(false);
+  const [inputMode, setInputMode] = useState<'keys' | 'wave'>('keys');
   const recorded = useRef<number | null>(null);
 
   const info = phaseForLevel(session.level.streak);
@@ -129,8 +131,26 @@ export default function Play() {
           <Text style={styles.phaseDesc}>{info.description}</Text>
         </View>
 
-        {/* ── Mix Mode: Per-Node Instrument Customizer with Audio Preview ── */}
-        {isMixMode && (
+        {/* ── Mode Switcher: Waveform vs Keys/Pads ── */}
+        <View style={styles.modeSwitchRow}>
+          <Pressable
+            style={[styles.modeTab, inputMode === 'keys' && styles.modeTabActive]}
+            onPress={() => setInputMode('keys')}>
+            <Text style={[styles.modeTabText, inputMode === 'keys' && styles.modeTabTextActive]}>
+              {session.instrument === 'drum' ? '🥁 DRUM PADS' : '🎹 KEYS MODE'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeTab, inputMode === 'wave' && styles.modeTabActive]}
+            onPress={() => setInputMode('wave')}>
+            <Text style={[styles.modeTabText, inputMode === 'wave' && styles.modeTabTextActive]}>
+              〰 WAVE EDITOR
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* ── Mix Mode: Per-Node Instrument Customizer (in Wave Mode) ── */}
+        {isMixMode && inputMode === 'wave' && (
           <View style={styles.mixCard}>
             <View style={styles.mixHeader}>
               <Text style={styles.mixTitle}>MIX MODE · NODE #{session.selectedPoint + 1}</Text>
@@ -177,25 +197,53 @@ export default function Play() {
           </View>
         )}
 
-        {/* ── Waveform editor ── */}
-        <View style={styles.stageCard}>
-          <View style={styles.stageHeader}>
-            <Text style={styles.stageLabel} numberOfLines={1}>
-              {isMixMode
-                ? `NODE #${session.selectedPoint + 1} (${selectedNodeMeta.emoji} ${selectedNodeMeta.label})`
-                : `MELODY: ${chosenMeta.emoji} ${chosenMeta.label.toUpperCase()}`}
-            </Text>
-            <Text style={styles.stageHint}>DRAG NODES</Text>
+        {/* ── Interactive Input Area: Keyboard/Pads OR Waveform ── */}
+        {inputMode === 'keys' ? (
+          <View style={styles.stageCard}>
+            {/* Live mini preview of the current player melody wave */}
+            <View style={styles.miniWaveWrap}>
+              <Waveform
+                data={session.playerData}
+                color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
+                width={innerWidth - 24}
+                height={36}
+                strokeWidth={2}
+              />
+            </View>
+
+            <InstrumentKeyboardView
+              profile={session.profile}
+              selectedStep={session.selectedPoint}
+              onSelectStep={session.setSelectedPoint}
+              onNoteChange={session.updatePoint}
+              instrument={session.instrument}
+              stepInstruments={session.playerNodeInstruments}
+              onStepInstrumentChange={session.setPlayerNodeInstrument}
+              onPlayNote={(v, nodeIdx, inst) => session.playNote(v, nodeIdx, inst)}
+              color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
+            />
           </View>
-          <WaveformEditor
-            profile={session.profile}
-            onChange={session.updatePoint}
-            onNoteChange={(v) => session.playNote(v, session.selectedPoint)}
-            width={innerWidth}
-            height={200}
-            color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
-          />
-        </View>
+        ) : (
+          <View style={styles.stageCard}>
+            <View style={styles.stageHeader}>
+              <Text style={styles.stageLabel} numberOfLines={1}>
+                {isMixMode
+                  ? `NODE #${session.selectedPoint + 1} (${selectedNodeMeta.emoji} ${selectedNodeMeta.label})`
+                  : `MELODY: ${chosenMeta.emoji} ${chosenMeta.label.toUpperCase()}`}
+              </Text>
+              <Text style={styles.stageHint}>DRAG NODES</Text>
+            </View>
+            <WaveformEditor
+              profile={session.profile}
+              onChange={session.updatePoint}
+              onNoteChange={(v) => session.playNote(v, session.selectedPoint)}
+              onSelectPoint={session.setSelectedPoint}
+              width={innerWidth}
+              height={200}
+              color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
+            />
+          </View>
+        )}
 
         {/* ── Target hint (pure wave line only, no text/data/numbers) ── */}
         {showTarget ? (
@@ -494,6 +542,47 @@ const styles = StyleSheet.create({
     color: theme.textDim,
     letterSpacing: 0.5,
     textAlign: 'center',
+  },
+
+  // Mode switcher tabs
+  modeSwitchRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  modeTab: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.panel,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeTabActive: {
+    borderColor: '#00e5ff',
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+  },
+  modeTabText: {
+    fontFamily: mono,
+    fontSize: 10.5,
+    letterSpacing: 1.5,
+    color: theme.textDim,
+    fontWeight: '700',
+  },
+  modeTabTextActive: {
+    color: '#00e5ff',
+    fontWeight: '800',
+  },
+  miniWaveWrap: {
+    alignItems: 'center',
+    marginBottom: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(5, 7, 13, 0.6)',
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(28, 42, 69, 0.4)',
   },
 
   // Stage / editor card

@@ -44,7 +44,7 @@ export interface Session {
   playInstrumentPreview: (inst: SingleInstrumentId) => void;
   setSelectedPoint: (i: number) => void;
   updatePoint: (i: number, v: number) => void;
-  playNote: (v: number, nodeIndex?: number) => void;
+  playNote: (v: number, nodeIndex?: number, instOverride?: SingleInstrumentId) => void;
   submit: () => void;
   retrySame: () => void;
   next: () => void;
@@ -101,11 +101,13 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     setActivePlaying(null);
   }, []);
 
-  const playNote = useCallback((v: number, nodeIndex?: number) => {
+  const playNote = useCallback((v: number, nodeIndex?: number, instOverride?: SingleInstrumentId) => {
     const key = valueToPianoKey(v);
-    const activeInst = (gameInstrument === 'mix' && nodeIndex !== undefined)
-      ? playerNodeInstruments[nodeIndex]
-      : (gameInstrument === 'mix' ? 'piano' : (gameInstrument as SingleInstrumentId));
+    const activeInst = instOverride || (
+      (gameInstrument === 'mix' && nodeIndex !== undefined)
+        ? playerNodeInstruments[nodeIndex]
+        : (gameInstrument === 'mix' ? 'piano' : (gameInstrument as SingleInstrumentId))
+    );
 
     const cacheKey = `${activeInst}_${key.note}`;
     let clipId = singleNoteClips.current.get(cacheKey);

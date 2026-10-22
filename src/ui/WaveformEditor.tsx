@@ -19,6 +19,7 @@ interface Props {
   profile: number[];
   onChange: (index: number, value: number) => void;
   onNoteChange?: (value: number) => void;
+  onSelectPoint?: (index: number) => void;
   height?: number;
   width: number;
   color?: string;
@@ -61,6 +62,7 @@ export function WaveformEditor({
   profile,
   onChange,
   onNoteChange,
+  onSelectPoint,
   height = 200,
   width,
   color = theme.player,
@@ -123,6 +125,7 @@ export function WaveformEditor({
     const idx = nearestPoint(locationX);
     active.current = idx;
     setDragging(idx);
+    onSelectPoint?.(idx);
 
     const raw = (mid - locationY) / amp;
     const snapped = snapToPianoValue(raw);
