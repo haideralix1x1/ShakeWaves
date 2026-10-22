@@ -145,7 +145,7 @@ export default function Play() {
           </Text>
           <Text style={styles.phaseDesc}>
             {isMixMode
-              ? 'Listen to the target tune and assign the matching instrument to each step'
+              ? 'Listen to ▶ Target, then tap the instrument buttons to record the matching sequence!'
               : info.description}
           </Text>
         </View>
@@ -199,8 +199,15 @@ export default function Play() {
               onNoteChange={session.updatePoint}
               instrument={session.instrument}
               stepInstruments={session.playerNodeInstruments}
+              targetStepInstruments={session.targetNodeInstruments}
+              activePlaying={session.activePlaying}
               onStepInstrumentChange={session.setPlayerNodeInstrument}
               onPlayNote={(v, nodeIdx, inst) => session.playNote(v, nodeIdx, inst)}
+              onAutoPlay={() => session.previewPlayer(true)}
+              onResetCycle={() => {
+                session.stopPlayback();
+                session.setSelectedPoint(0);
+              }}
               color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
               playbackStep={session.playbackStepIndex}
             />
