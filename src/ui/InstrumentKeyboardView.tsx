@@ -115,9 +115,11 @@ export function InstrumentKeyboardView({
             const stepMeta = INSTRUMENTS.find((i) => i.id === stepInst)!;
             const noteInfo = valueToPianoKey(val);
 
-            // In drum mode, show drum label
+            // In mix mode, show instrument name; in drum mode, show drum label; otherwise note pitch
             let noteLabel = noteInfo.note;
-            if (stepInst === 'drum') {
+            if (isMix) {
+              noteLabel = stepMeta.label;
+            } else if (stepInst === 'drum') {
               const drumMatch = DRUM_PADS.find((d) => Math.abs(d.value - val) < 0.15);
               if (drumMatch) noteLabel = drumMatch.label;
             }
@@ -127,6 +129,7 @@ export function InstrumentKeyboardView({
                 key={`step-${idx}`}
                 style={[
                   styles.stepPill,
+                  isMix && styles.stepPillMix,
                   isSelected && {
                     borderColor: stepMeta.color,
                     backgroundColor: `${stepMeta.color}25`,
@@ -141,9 +144,11 @@ export function InstrumentKeyboardView({
                 <Text
                   style={[
                     styles.stepNote,
+                    isMix && styles.stepNoteMix,
                     isSelected && { color: stepMeta.color, fontWeight: '700' },
                   ]}
-                  numberOfLines={1}>
+                  numberOfLines={1}
+                  adjustsFontSizeToFit>
                   {noteLabel}
                 </Text>
               </Pressable>
@@ -569,6 +574,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 2,
   },
+  stepPillMix: {
+    width: 60,
+    height: 62,
+    paddingHorizontal: 2,
+  },
   stepNum: {
     fontFamily: mono,
     fontSize: 9,
@@ -585,6 +595,10 @@ const styles = StyleSheet.create({
     color: theme.text,
     fontWeight: '600',
     marginTop: 2,
+  },
+  stepNoteMix: {
+    fontSize: 8,
+    letterSpacing: 0.5,
   },
 
   // 2. Mix mode simple instrument selector

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   INSTRUMENTS,
+  SingleInstrumentId,
 } from '../audio/instruments';
 import { useInstrument } from '../game/InstrumentContext';
 import { useStats } from '../game/StatsContext';
@@ -87,6 +88,8 @@ export default function Play() {
         onHome={onHome}
         instrument={session.instrument}
         activePlaying={session.activePlaying}
+        targetNodeInstruments={session.targetNodeInstruments}
+        playerNodeInstruments={session.playerNodeInstruments}
       />
     );
   }
@@ -159,16 +162,18 @@ export default function Play() {
         {/* ── Interactive Input Area: Keyboard/Pads OR Waveform ── */}
         {isMixMode || inputMode === 'keys' ? (
           <View style={styles.stageCard}>
-            {/* Live mini preview of the current player melody wave */}
-            <View style={styles.miniWaveWrap}>
-              <Waveform
-                data={session.playerData}
-                color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
-                width={innerWidth - 24}
-                height={36}
-                strokeWidth={2}
-              />
-            </View>
+            {/* Live mini preview of the current player melody wave (Single Instrument Modes only) */}
+            {!isMixMode && (
+              <View style={styles.miniWaveWrap}>
+                <Waveform
+                  data={session.playerData}
+                  color={chosenMeta.color}
+                  width={innerWidth - 24}
+                  height={36}
+                  strokeWidth={2}
+                />
+              </View>
+            )}
 
             <InstrumentKeyboardView
               profile={session.profile}
@@ -203,7 +208,7 @@ export default function Play() {
         )}
 
         {/* ── Target hint (pure wave line only, no text/data/numbers) ── */}
-        {showTarget ? (
+        {!isMixMode && showTarget ? (
           <View style={styles.targetCard}>
             <Waveform
               data={session.targetData}
@@ -265,16 +270,18 @@ export default function Play() {
           />
         </View>
 
-        <Pressable style={styles.peek} onPress={() => setShowTarget((s) => !s)} hitSlop={8}>
-          <Text style={styles.peekText}>
-            {showTarget ? '▾ HIDE TARGET SHAPE' : '▸ REVEAL TARGET SHAPE (HINT)'}
-          </Text>
-        </Pressable>
+        {!isMixMode && (
+          <Pressable style={styles.peek} onPress={() => setShowTarget((s) => !s)} hitSlop={8}>
+            <Text style={styles.peekText}>
+              {showTarget ? '▾ HIDE TARGET SHAPE' : '▸ REVEAL TARGET SHAPE (HINT)'}
+            </Text>
+          </Pressable>
+        )}
 
         <View style={styles.submitWrap}>
           <NeonButton label="Synchronize" onPress={session.submit} disabled={session.busy} />
           <Pressable onPress={session.clear} style={styles.clearBtn} hitSlop={8}>
-            <Text style={styles.clearText}>RESET WAVE</Text>
+            <Text style={styles.clearText}>{isMixMode ? 'RESET SEQUENCE' : 'RESET WAVE'}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -294,6 +301,8 @@ function ResultView({
   onHome,
   instrument,
   activePlaying,
+  targetNodeInstruments,
+  playerNodeInstruments,
 }: {
   result: ReturnType<typeof useGameSession>['result'];
   streak: number;
@@ -304,6 +313,8 @@ function ResultView({
   onHome: () => void;
   instrument: string;
   activePlaying?: 'target' | 'player' | null;
+  targetNodeInstruments?: SingleInstrumentId[];
+  playerNodeInstruments?: SingleInstrumentId[];
 }) {
   const { width } = useWindowDimensions();
   const innerWidth = width - 40;
@@ -311,6 +322,7 @@ function ResultView({
   const color = gradeColor(result.grade);
   const passed = result.match;
   const chosenMeta = INSTRUMENTS.find((i) => i.id === instrument)!;
+  const isMixMode = instrument === 'mix';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -335,29 +347,89 @@ function ResultView({
           )}
         </View>
 
-        {/* ── Compare card ── */}
-        <View style={styles.compareCard}>
-          <View style={styles.legend}>
-            <Text style={[styles.legendItem, { color: theme.target }]}>— TARGET</Text>
-            <Text style={[styles.legendItem, { color: theme.player }]}>— YOURS</Text>
+        {/* ── Compare card: Mix Sequence OR Waveform ── */}
+        {isMixMode && targetNodeInstruments && playerNodeInstruments ? (
+          <View style={styles.mixCompareCard}>
+            <Text style={styles.mixCompareTitle}>INSTRUMENT SEQUENCE COMPARISON</Text>
+            <View style={styles.mixCompareList}>
+              {targetNodeInstruments.map((targetInst, idx) => {
+                const playerInst = playerNodeInstruments[idx] || 'piano';
+                const isMatch = targetInst === playerInst;
+                const targetMeta = INSTRUMENTS.find((i) => i.id === targetInst)!;
+                const playerMeta = INSTRUMENTS.find((i) => i.id === playerInst)!;
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.mixStepRow,
+                      isMatch ? styles.mixStepMatch : styles.mixStepMismatch,
+                    ]}>
+                    <View style={styles.mixStepNumBadge}>
+                      <Text style={styles.mixStepNumText}>#{idx + 1}</Text>
+                    </View>
+
+                    <View style={styles.mixStepCol}>
+                      <Text style={styles.mixStepColLabel}>TARGET</Text>
+                      <Text style={[styles.mixStepVal, { color: targetMeta.color }]}>
+                        {targetMeta.emoji} {targetMeta.label.toUpperCase()}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.mixStepVs}>vs</Text>
+
+                    <View style={styles.mixStepCol}>
+                      <Text style={styles.mixStepColLabel}>YOURS</Text>
+                      <Text style={[styles.mixStepVal, { color: playerMeta.color }]}>
+                        {playerMeta.emoji} {playerMeta.label.toUpperCase()}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.mixStatusBadge,
+                        {
+                          backgroundColor: isMatch
+                            ? 'rgba(0,245,212,0.18)'
+                            : 'rgba(255,0,127,0.18)',
+                        },
+                      ]}>
+                      <Text
+                        style={[
+                          styles.mixStatusText,
+                          { color: isMatch ? '#00f5d4' : '#ff007f' },
+                        ]}>
+                        {isMatch ? '✓' : '✗'}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
           </View>
-          <Waveform
-            data={result.targetEvaluation}
-            color={theme.target}
-            width={innerWidth - 24}
-            height={90}
-            dashed
-            strokeWidth={2}
-            baseline
-          />
-          <Waveform
-            data={result.playerEvaluation}
-            color={theme.player}
-            width={innerWidth - 24}
-            height={90}
-            strokeWidth={2.5}
-          />
-        </View>
+        ) : (
+          <View style={styles.compareCard}>
+            <View style={styles.legend}>
+              <Text style={[styles.legendItem, { color: theme.target }]}>— TARGET</Text>
+              <Text style={[styles.legendItem, { color: theme.player }]}>— YOURS</Text>
+            </View>
+            <Waveform
+              data={result.targetEvaluation}
+              color={theme.target}
+              width={innerWidth - 24}
+              height={90}
+              dashed
+              strokeWidth={2}
+              baseline
+            />
+            <Waveform
+              data={result.playerEvaluation}
+              color={theme.player}
+              width={innerWidth - 24}
+              height={90}
+              strokeWidth={2.5}
+            />
+          </View>
+        )}
 
         {/* ── Playback row with Compact Icon Labels ── */}
         <View style={styles.playRow}>
@@ -390,7 +462,9 @@ function ResultView({
 
         {!passed ? (
           <Text style={styles.failNote}>
-            Match 40% or higher to advance. Tip: use ▶ TARGET then ▶ MINE and study the wave shape differences.
+            {isMixMode
+              ? 'Match 40% or more instruments to advance. Tip: use ▶ Target then ▶ Mine to hear which instruments play on each step.'
+              : 'Match 40% or higher to advance. Tip: use ▶ Target then ▶ Mine and study the wave shape differences.'}
           </Text>
         ) : null}
       </ScrollView>
@@ -671,6 +745,87 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
     overflow: 'hidden',
+  },
+  mixCompareCard: {
+    borderWidth: 1,
+    borderColor: 'rgba(0, 245, 212, 0.3)',
+    borderRadius: 14,
+    backgroundColor: theme.panel,
+    padding: 12,
+    marginBottom: 12,
+  },
+  mixCompareTitle: {
+    fontFamily: mono,
+    fontSize: 10,
+    color: '#00f5d4',
+    letterSpacing: 1.5,
+    fontWeight: '800',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  mixCompareList: {
+    gap: 6,
+  },
+  mixStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+  },
+  mixStepMatch: {
+    borderColor: 'rgba(0, 245, 212, 0.4)',
+    backgroundColor: 'rgba(0, 245, 212, 0.05)',
+  },
+  mixStepMismatch: {
+    borderColor: 'rgba(255, 0, 127, 0.4)',
+    backgroundColor: 'rgba(255, 0, 127, 0.05)',
+  },
+  mixStepNumBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  mixStepNumText: {
+    fontFamily: mono,
+    fontSize: 9,
+    color: theme.textDim,
+    fontWeight: '700',
+  },
+  mixStepCol: {
+    flex: 1,
+  },
+  mixStepColLabel: {
+    fontFamily: mono,
+    fontSize: 7.5,
+    color: theme.textDim,
+    letterSpacing: 0.5,
+  },
+  mixStepVal: {
+    fontFamily: mono,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  mixStepVs: {
+    fontFamily: mono,
+    fontSize: 9,
+    color: theme.textDim,
+  },
+  mixStatusBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mixStatusText: {
+    fontFamily: mono,
+    fontSize: 12,
+    fontWeight: '900',
   },
   legend: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   legendItem: { fontFamily: mono, fontSize: 10, letterSpacing: 2 },
