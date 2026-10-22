@@ -38,6 +38,7 @@ export interface Session {
   speed: PlaybackSpeed;
   isLooping: boolean;
   activePlaying: 'target' | 'player' | null;
+  playbackStepIndex: number | null;
   setSpeed: (spd: PlaybackSpeed) => void;
   setIsLooping: (val: boolean | ((prev: boolean) => boolean)) => void;
   setPlayerNodeInstrument: (nodeIndex: number, inst: SingleInstrumentId) => void;
@@ -94,6 +95,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
   const [speed, setSpeed] = useState<PlaybackSpeed>(1.0);
   const [isLooping, setIsLooping] = useState<boolean>(false);
   const [activePlaying, setActivePlaying] = useState<'target' | 'player' | null>(null);
+  const [playbackStepIndex, setPlaybackStepIndex] = useState<number | null>(null);
 
   const getStepDuration = useCallback((spd: PlaybackSpeed) => {
     switch (spd) {
@@ -115,10 +117,16 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
   const playerClip = useRef<number | null>(null);
   const singleNoteClips = useRef<Map<string, number>>(new Map());
   const playingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearPlayingState = useCallback(() => {
     if (playingTimer.current) clearTimeout(playingTimer.current);
+    if (playbackTimerRef.current) {
+      clearInterval(playbackTimerRef.current);
+      playbackTimerRef.current = null;
+    }
     setActivePlaying(null);
+    setPlaybackStepIndex(null);
   }, []);
 
   const playNote = useCallback((v: number, nodeIndex?: number, instOverride?: SingleInstrumentId) => {
@@ -133,7 +141,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
         : (gameInstrument === 'mix' ? 'piano' : (gameInstrument as SingleInstrumentId))
     );
 
-    const dur = activeInst === 'violin' ? 0.65 : 0.45;
+    const dur = activeInst === 'accordion' ? 0.52 : (activeInst === 'synth' ? 0.48 : 0.45);
     const cacheKey = `${activeInst}_${key.note}`;
     let clipId = singleNoteClips.current.get(cacheKey);
     if (clipId === undefined) {
@@ -150,7 +158,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
       ? level.targetProfile[selectedPoint]
       : (profile[selectedPoint] ?? 0);
     const key = valueToPianoKey(val);
-    const dur = inst === 'violin' ? 0.65 : 0.45;
+    const dur = inst === 'accordion' ? 0.52 : (inst === 'synth' ? 0.48 : 0.45);
     const cacheKey = `${inst}_${key.note}`;
     let clipId = singleNoteClips.current.get(cacheKey);
     if (clipId === undefined) {
@@ -297,10 +305,34 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     setActivePlaying('player');
     playClip(playerClip.current, isLooping);
 
+    // Live step highlight ticker for sequence buttons & waveform nodes
+    if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
+    const stepMs = stepDur * 1000;
+    const totalSteps = melodyProfile.length;
+    setPlaybackStepIndex(0);
+    const startTime = Date.now();
+
+    playbackTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const step = Math.floor(elapsed / stepMs);
+      if (step < totalSteps) {
+        setPlaybackStepIndex(step);
+      } else {
+        if (isLooping) {
+          setPlaybackStepIndex(step % totalSteps);
+        } else {
+          if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
+          playbackTimerRef.current = null;
+          setPlaybackStepIndex(null);
+        }
+      }
+    }, 25);
+
     if (!isLooping) {
       const approxDurationMs = (melodyProfile.length * stepDur + 0.6) * 1000;
       playingTimer.current = setTimeout(() => {
         setActivePlaying((curr) => (curr === 'player' ? null : curr));
+        setPlaybackStepIndex(null);
       }, approxDurationMs);
     }
   }, [activePlaying, gameInstrument, level.targetProfile, profile, playerNodeInstruments, speed, isLooping, getStepDuration, releasePlayerClip, stopPlayback]);
@@ -361,6 +393,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     speed,
     isLooping,
     activePlaying,
+    playbackStepIndex,
     setSpeed,
     setIsLooping,
     setPlayerNodeInstrument,

@@ -185,6 +185,7 @@ export default function Play() {
               onStepInstrumentChange={session.setPlayerNodeInstrument}
               onPlayNote={(v, nodeIdx, inst) => session.playNote(v, nodeIdx, inst)}
               color={isMixMode ? selectedNodeMeta.color : chosenMeta.color}
+              playbackStep={session.playbackStepIndex}
             />
           </View>
         ) : (
@@ -203,6 +204,7 @@ export default function Play() {
               width={innerWidth}
               height={200}
               color={chosenMeta.color}
+              playbackPoint={session.playbackStepIndex}
             />
           </View>
         )}

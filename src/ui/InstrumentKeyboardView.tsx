@@ -27,6 +27,7 @@ interface Props {
   onStepInstrumentChange?: (step: number, inst: SingleInstrumentId) => void;
   onPlayNote: (value: number, nodeIndex?: number, inst?: SingleInstrumentId) => void;
   color?: string;
+  playbackStep?: number | null;
 }
 
 // Drum pad definitions mapping directly to PIANO_KEYS pitches
@@ -51,6 +52,7 @@ export function InstrumentKeyboardView({
   onStepInstrumentChange,
   onPlayNote,
   color = theme.player,
+  playbackStep = null,
 }: Props) {
   const [autoAdvance, setAutoAdvance] = useState(true);
 
@@ -62,6 +64,14 @@ export function InstrumentKeyboardView({
 
   const currentInstMeta = INSTRUMENTS.find((i) => i.id === currentStepInst)!;
   const currentVal = profile[selectedStep] ?? 0;
+
+  // Active note and instrument during live playback (for sequence highlighting)
+  const playbackNoteVal = (playbackStep !== null && playbackStep !== undefined)
+    ? profile[playbackStep]
+    : null;
+  const playingMixInstId = (isMix && playbackStep !== null && playbackStep !== undefined)
+    ? (stepInstruments?.[playbackStep] || 'piano')
+    : null;
 
   const handleKeyPress = (val: number) => {
     try {
@@ -111,6 +121,7 @@ export function InstrumentKeyboardView({
           contentContainerStyle={styles.stepScroll}>
           {profile.map((val, idx) => {
             const isSelected = selectedStep === idx;
+            const isPlayingThisStep = playbackStep === idx;
             const stepInst = isMix ? (stepInstruments?.[idx] || 'piano') : (instrument as SingleInstrumentId);
             const stepMeta = INSTRUMENTS.find((i) => i.id === stepInst)!;
             const noteInfo = valueToPianoKey(val);
@@ -135,9 +146,21 @@ export function InstrumentKeyboardView({
                     backgroundColor: `${stepMeta.color}25`,
                     transform: [{ scale: 1.05 }],
                   },
+                  isPlayingThisStep && {
+                    borderColor: '#00f5d4',
+                    backgroundColor: 'rgba(0, 245, 212, 0.4)',
+                    transform: [{ scale: 1.12 }],
+                    borderWidth: 2,
+                    zIndex: 10,
+                  },
                 ]}
                 onPress={() => handleStepSelect(idx)}>
-                <Text style={[styles.stepNum, isSelected && { color: stepMeta.color, fontWeight: '800' }]}>
+                <Text
+                  style={[
+                    styles.stepNum,
+                    isSelected && { color: stepMeta.color, fontWeight: '800' },
+                    isPlayingThisStep && { color: '#00f5d4', fontWeight: '900' },
+                  ]}>
                   #{idx + 1}
                 </Text>
                 {isMix && <Text style={styles.stepEmoji}>{stepMeta.emoji}</Text>}
@@ -146,6 +169,7 @@ export function InstrumentKeyboardView({
                     styles.stepNote,
                     isMix && styles.stepNoteMix,
                     isSelected && { color: stepMeta.color, fontWeight: '700' },
+                    isPlayingThisStep && { color: '#00f5d4', fontWeight: '900' },
                   ]}
                   numberOfLines={1}
                   adjustsFontSizeToFit>
@@ -167,6 +191,7 @@ export function InstrumentKeyboardView({
             {SINGLE_INSTRUMENTS.map((instId) => {
               const meta = INSTRUMENTS.find((i) => i.id === instId)!;
               const isAssigned = currentStepInst === instId;
+              const isPlayingNow = playingMixInstId === instId;
               return (
                 <Pressable
                   key={instId}
@@ -176,6 +201,18 @@ export function InstrumentKeyboardView({
                       borderColor: meta.color,
                       backgroundColor: `${meta.color}30`,
                       transform: [{ scale: 1.02 }],
+                    },
+                    isPlayingNow && {
+                      borderColor: '#00f5d4',
+                      backgroundColor: `${meta.color}55`,
+                      transform: [{ scale: 1.08 }],
+                      borderWidth: 2.5,
+                      shadowColor: '#00f5d4',
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 0.9,
+                      shadowRadius: 10,
+                      elevation: 8,
+                      zIndex: 10,
                     },
                   ]}
                   onPress={() => {
@@ -195,6 +232,7 @@ export function InstrumentKeyboardView({
                     style={[
                       styles.mixSimpleLabel,
                       isAssigned && { color: meta.color, fontWeight: '900' },
+                      isPlayingNow && { color: '#00f5d4', fontWeight: '900' },
                     ]}>
                     {meta.label.toUpperCase()}
                   </Text>
@@ -212,6 +250,7 @@ export function InstrumentKeyboardView({
           {currentStepInst === 'piano' && (
             <PianoKeyboard
               activeValue={currentVal}
+              playbackValue={playbackNoteVal}
               onPressKey={handleKeyPress}
               accentColor={currentInstMeta.color}
             />
@@ -220,6 +259,7 @@ export function InstrumentKeyboardView({
           {currentStepInst === 'drum' && (
             <DrumPads
               activeValue={currentVal}
+              playbackValue={playbackNoteVal}
               onPressPad={handleKeyPress}
               accentColor={currentInstMeta.color}
             />
@@ -228,6 +268,7 @@ export function InstrumentKeyboardView({
           {currentStepInst === 'guitar' && (
             <GuitarFretboard
               activeValue={currentVal}
+              playbackValue={playbackNoteVal}
               onPressString={handleKeyPress}
               accentColor={currentInstMeta.color}
             />
@@ -236,6 +277,7 @@ export function InstrumentKeyboardView({
           {currentStepInst === 'xylophone' && (
             <XylophoneBars
               activeValue={currentVal}
+              playbackValue={playbackNoteVal}
               onPressBar={handleKeyPress}
               accentColor={currentInstMeta.color}
             />
@@ -247,6 +289,7 @@ export function InstrumentKeyboardView({
             currentStepInst !== 'xylophone' && (
               <MelodicPads
                 activeValue={currentVal}
+                playbackValue={playbackNoteVal}
                 onPressKey={handleKeyPress}
                 accentColor={currentInstMeta.color}
                 instrument={currentInstMeta}
@@ -262,10 +305,12 @@ export function InstrumentKeyboardView({
 
 function PianoKeyboard({
   activeValue,
+  playbackValue,
   onPressKey,
   accentColor,
 }: {
   activeValue: number;
+  playbackValue?: number | null;
   onPressKey: (val: number) => void;
   accentColor: string;
 }) {
@@ -277,6 +322,7 @@ function PianoKeyboard({
       <View style={styles.pianoKeysRow}>
         {PIANO_KEYS.map((k) => {
           const isActive = Math.abs(k.value - activeValue) < 0.12;
+          const isPlayingThisKey = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
           return (
             <Pressable
               key={k.note}
@@ -288,16 +334,31 @@ function PianoKeyboard({
                   borderBottomWidth: 5,
                   borderBottomColor: accentColor,
                 },
+                isPlayingThisKey && {
+                  backgroundColor: '#00f5d4',
+                  borderColor: '#ffffff',
+                  borderBottomWidth: 6,
+                  borderBottomColor: '#00f5d4',
+                  transform: [{ scale: 1.06 }],
+                  zIndex: 10,
+                },
               ]}
               onPress={() => onPressKey(k.value)}>
               <Text
                 style={[
                   styles.pianoKeyNote,
                   isActive && { color: accentColor, fontWeight: '900' },
+                  isPlayingThisKey && { color: '#000000', fontWeight: '900' },
                 ]}>
                 {k.note}
               </Text>
-              <Text style={styles.pianoKeyFreq}>{Math.round(k.freq)}Hz</Text>
+              <Text
+                style={[
+                  styles.pianoKeyFreq,
+                  isPlayingThisKey && { color: '#000000', fontWeight: '800' },
+                ]}>
+                {Math.round(k.freq)}Hz
+              </Text>
             </Pressable>
           );
         })}
@@ -310,10 +371,12 @@ function PianoKeyboard({
 
 function DrumPads({
   activeValue,
+  playbackValue,
   onPressPad,
   accentColor,
 }: {
   activeValue: number;
+  playbackValue?: number | null;
   onPressPad: (val: number) => void;
   accentColor: string;
 }) {
@@ -325,6 +388,7 @@ function DrumPads({
       <View style={styles.drumGrid}>
         {DRUM_PADS.map((pad) => {
           const isActive = Math.abs(pad.value - activeValue) < 0.12;
+          const isPlayingThisPad = playbackValue !== null && playbackValue !== undefined && Math.abs(pad.value - playbackValue) < 0.12;
           return (
             <Pressable
               key={pad.label}
@@ -334,6 +398,13 @@ function DrumPads({
                   borderColor: accentColor,
                   backgroundColor: `${accentColor}30`,
                 },
+                isPlayingThisPad && {
+                  borderColor: '#00f5d4',
+                  backgroundColor: 'rgba(0, 245, 212, 0.45)',
+                  transform: [{ scale: 1.08 }],
+                  borderWidth: 2.5,
+                  zIndex: 10,
+                },
               ]}
               onPress={() => onPressPad(pad.value)}>
               <Text style={styles.drumPadEmoji}>{pad.emoji}</Text>
@@ -341,6 +412,7 @@ function DrumPads({
                 style={[
                   styles.drumPadLabel,
                   isActive && { color: accentColor, fontWeight: '900' },
+                  isPlayingThisPad && { color: '#00f5d4', fontWeight: '900' },
                 ]}>
                 {pad.label}
               </Text>
@@ -357,10 +429,12 @@ function DrumPads({
 
 function GuitarFretboard({
   activeValue,
+  playbackValue,
   onPressString,
   accentColor,
 }: {
   activeValue: number;
+  playbackValue?: number | null;
   onPressString: (val: number) => void;
   accentColor: string;
 }) {
@@ -372,6 +446,7 @@ function GuitarFretboard({
       <View style={styles.guitarStringsList}>
         {PIANO_KEYS.map((k, i) => {
           const isActive = Math.abs(k.value - activeValue) < 0.12;
+          const isPlayingThisFret = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
           const stringGirth = Math.max(1.5, 4.5 - i * 0.35);
           return (
             <Pressable
@@ -382,12 +457,20 @@ function GuitarFretboard({
                   backgroundColor: `${accentColor}25`,
                   borderColor: accentColor,
                 },
+                isPlayingThisFret && {
+                  backgroundColor: 'rgba(0, 245, 212, 0.35)',
+                  borderColor: '#00f5d4',
+                  borderWidth: 2,
+                  transform: [{ scale: 1.03 }],
+                  zIndex: 10,
+                },
               ]}
               onPress={() => onPressString(k.value)}>
               <Text
                 style={[
                   styles.guitarNoteText,
                   isActive && { color: accentColor, fontWeight: '800' },
+                  isPlayingThisFret && { color: '#00f5d4', fontWeight: '900' },
                 ]}>
                 {k.note}
               </Text>
@@ -399,11 +482,18 @@ function GuitarFretboard({
                     styles.guitarWire,
                     { height: stringGirth },
                     isActive && { backgroundColor: accentColor, shadowColor: accentColor, shadowOpacity: 1, shadowRadius: 4 },
+                    isPlayingThisFret && { backgroundColor: '#00f5d4', shadowColor: '#00f5d4', shadowOpacity: 1, shadowRadius: 6 },
                   ]}
                 />
               </View>
 
-              <Text style={styles.guitarFreqText}>{Math.round(k.freq)}Hz</Text>
+              <Text
+                style={[
+                  styles.guitarFreqText,
+                  isPlayingThisFret && { color: '#00f5d4', fontWeight: '800' },
+                ]}>
+                {Math.round(k.freq)}Hz
+              </Text>
             </Pressable>
           );
         })}
@@ -416,10 +506,12 @@ function GuitarFretboard({
 
 function XylophoneBars({
   activeValue,
+  playbackValue,
   onPressBar,
   accentColor,
 }: {
   activeValue: number;
+  playbackValue?: number | null;
   onPressBar: (val: number) => void;
   accentColor: string;
 }) {
@@ -431,6 +523,7 @@ function XylophoneBars({
       <View style={styles.xyloBarsRow}>
         {PIANO_KEYS.map((k, i) => {
           const isActive = Math.abs(k.value - activeValue) < 0.12;
+          const isPlayingThisBar = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
           // Lower pitch = longer bar (130px), Higher pitch = shorter bar (75px)
           const barHeight = 135 - i * 7;
           return (
@@ -443,17 +536,25 @@ function XylophoneBars({
                   backgroundColor: `${accentColor}40`,
                   borderColor: accentColor,
                 },
+                isPlayingThisBar && {
+                  backgroundColor: 'rgba(0, 245, 212, 0.55)',
+                  borderColor: '#00f5d4',
+                  borderWidth: 2,
+                  transform: [{ scale: 1.08 }],
+                  zIndex: 10,
+                },
               ]}
               onPress={() => onPressBar(k.value)}>
-              <View style={styles.xyloPin} />
+              <View style={[styles.xyloPin, isPlayingThisBar && { backgroundColor: '#00f5d4' }]} />
               <Text
                 style={[
                   styles.xyloNote,
                   isActive && { color: accentColor, fontWeight: '900' },
+                  isPlayingThisBar && { color: '#000000', fontWeight: '900' },
                 ]}>
                 {k.note}
               </Text>
-              <View style={styles.xyloPin} />
+              <View style={[styles.xyloPin, isPlayingThisBar && { backgroundColor: '#00f5d4' }]} />
             </Pressable>
           );
         })}
@@ -462,15 +563,17 @@ function XylophoneBars({
   );
 }
 
-// ─── 5. Universal Melodic Touch Pads (Flute, Trumpet, Violin, Harp) ──────────
+// ─── 5. Universal Melodic Touch Pads (Accordion, Synth Lead, Trumpet, Harp) ───
 
 function MelodicPads({
   activeValue,
+  playbackValue,
   onPressKey,
   accentColor,
   instrument,
 }: {
   activeValue: number;
+  playbackValue?: number | null;
   onPressKey: (val: number) => void;
   accentColor: string;
   instrument: { label: string; emoji: string };
@@ -483,6 +586,7 @@ function MelodicPads({
       <View style={styles.melodicGrid}>
         {PIANO_KEYS.map((k) => {
           const isActive = Math.abs(k.value - activeValue) < 0.12;
+          const isPlayingThisPad = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
           return (
             <Pressable
               key={k.note}
@@ -492,6 +596,13 @@ function MelodicPads({
                   borderColor: accentColor,
                   backgroundColor: `${accentColor}30`,
                 },
+                isPlayingThisPad && {
+                  borderColor: '#00f5d4',
+                  backgroundColor: 'rgba(0, 245, 212, 0.45)',
+                  transform: [{ scale: 1.08 }],
+                  borderWidth: 2.5,
+                  zIndex: 10,
+                },
               ]}
               onPress={() => onPressKey(k.value)}>
               <Text style={styles.melodicEmoji}>{instrument.emoji}</Text>
@@ -499,10 +610,17 @@ function MelodicPads({
                 style={[
                   styles.melodicNote,
                   isActive && { color: accentColor, fontWeight: '900' },
+                  isPlayingThisPad && { color: '#00f5d4', fontWeight: '900' },
                 ]}>
                 {k.note}
               </Text>
-              <Text style={styles.melodicFreq}>{Math.round(k.freq)}Hz</Text>
+              <Text
+                style={[
+                  styles.melodicFreq,
+                  isPlayingThisPad && { color: '#00f5d4', fontWeight: '800' },
+                ]}>
+                {Math.round(k.freq)}Hz
+              </Text>
             </Pressable>
           );
         })}

@@ -9,7 +9,7 @@ import { mono, theme } from '../ui/theme';
 const RULES: { title: string; body: string }[] = [
   {
     title: '1. CHOOSE INSTRUMENT',
-    body: 'Select from 8 instruments (Piano, Guitar, Violin, Flute, Cello, Trumpet, Harp, Xylophone) or Mix Mode on the home screen before starting.',
+    body: 'Select from 8 instruments (Piano, Guitar, Accordion, Synth Lead, Drum, Trumpet, Harp, Xylophone) or Mix Mode on the home screen before starting.',
   },
   {
     title: '2. LISTEN',

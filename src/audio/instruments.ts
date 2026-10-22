@@ -6,8 +6,8 @@ import { valueToPianoKey } from './render';
 export type SingleInstrumentId =
   | 'piano'
   | 'guitar'
-  | 'violin'
-  | 'flute'
+  | 'accordion'
+  | 'synth'
   | 'drum'
   | 'trumpet'
   | 'harp'
@@ -25,8 +25,8 @@ export interface Instrument {
 export const SINGLE_INSTRUMENTS: SingleInstrumentId[] = [
   'piano',
   'guitar',
-  'violin',
-  'flute',
+  'accordion',
+  'synth',
   'drum',
   'trumpet',
   'harp',
@@ -34,15 +34,15 @@ export const SINGLE_INSTRUMENTS: SingleInstrumentId[] = [
 ];
 
 export const INSTRUMENTS: Instrument[] = [
-  { id: 'piano',     label: 'Piano',     emoji: '🎹', color: '#ff3df0' },
-  { id: 'guitar',    label: 'Guitar',    emoji: '🎸', color: '#ffd166' },
-  { id: 'violin',    label: 'Violin',    emoji: '🎻', color: '#f4845f' },
-  { id: 'flute',     label: 'Flute',     emoji: '🪈', color: '#00e5ff' },
-  { id: 'drum',      label: 'Drum',      emoji: '🥁', color: '#e11d48' },
-  { id: 'trumpet',   label: 'Trumpet',   emoji: '🎺', color: '#fbbf24' },
-  { id: 'harp',      label: 'Harp',      emoji: '🪕', color: '#34d399' },
-  { id: 'xylophone', label: 'Xylophone', emoji: '🔔', color: '#38bdf8' },
-  { id: 'mix',       label: 'Mix Mode',  emoji: '🔀', color: '#00f5d4' },
+  { id: 'piano',     label: 'Piano',      emoji: '🎹', color: '#ff3df0' },
+  { id: 'guitar',    label: 'Guitar',     emoji: '🎸', color: '#ffd166' },
+  { id: 'accordion', label: 'Accordion',  emoji: '🪗', color: '#ff9e00' },
+  { id: 'synth',     label: 'Synth Lead', emoji: '🎛️', color: '#00e5ff' },
+  { id: 'drum',      label: 'Drum',       emoji: '🥁', color: '#e11d48' },
+  { id: 'trumpet',   label: 'Trumpet',    emoji: '🎺', color: '#fbbf24' },
+  { id: 'harp',      label: 'Harp',       emoji: '🪕', color: '#34d399' },
+  { id: 'xylophone', label: 'Xylophone',  emoji: '🔔', color: '#38bdf8' },
+  { id: 'mix',       label: 'Mix Mode',   emoji: '🔀', color: '#00f5d4' },
 ];
 
 /**
@@ -51,14 +51,14 @@ export const INSTRUMENTS: Instrument[] = [
  */
 export function generateCuratedMixForLevel(streakIndex: number, noteCount = 9): SingleInstrumentId[] {
   const harmonicPalettes: SingleInstrumentId[][] = [
-    ['piano', 'violin', 'harp'],          // Classical acoustic elegance
-    ['guitar', 'flute', 'harp'],           // Warm acoustic & ethereal melody
-    ['drum', 'piano', 'violin'],           // Rhythmic melodic chamber
-    ['flute', 'xylophone', 'piano'],       // Playful bright acoustic
-    ['harp', 'drum', 'violin'],            // Rhythmic strings & harp
-    ['piano', 'guitar', 'flute'],          // Soft contemporary trio
-    ['trumpet', 'piano', 'drum'],          // Punchy brass & beats
-    ['guitar', 'piano', 'harp', 'drum'],   // Full rich ensemble
+    ['piano', 'accordion', 'harp'],           // European acoustic elegance & strings
+    ['guitar', 'synth', 'harp'],              // Warm acoustic & retro neon lead
+    ['drum', 'piano', 'accordion'],           // Rhythmic European melodic chamber
+    ['synth', 'xylophone', 'piano'],          // Playful cyber neon & acoustic
+    ['harp', 'drum', 'accordion'],            // Rhythmic European folk & harp
+    ['piano', 'guitar', 'synth'],             // Contemporary synthwave pop trio
+    ['trumpet', 'piano', 'drum'],             // Punchy brass & beats
+    ['guitar', 'synth', 'accordion', 'drum'], // Full eclectic ensemble
   ];
 
   const palette = harmonicPalettes[Math.floor(Math.random() * harmonicPalettes.length)];
@@ -139,102 +139,114 @@ function synthGuitar(
 }
 
 /**
- * Violin: rich, long sustained tone with ambient cathedral-style reverb / echo.
- * Each node rings out with smooth slow bow sustain and warm reflective echo decay.
+ * Accordion: European acoustic reed sound.
+ * Features free-reed vibratory harmonics with dual-reed (musette) beating detune,
+ * warm acoustic bellow swells, and characteristic European cafe/folk resonance.
  */
-function synthViolin(
+function synthAccordion(
   freq: number,
-  durationSec = 0.65, // Longer sustained duration
+  durationSec = 0.52,
   sampleRate = SAMPLE_RATE,
   velocity = 0.85
 ): Float32Array {
   const n = Math.floor(durationSec * sampleRate);
-  const dry = new Float32Array(n);
+  const out = new Float32Array(n);
 
-  const harmonics = [
+  // Free-reed harmonic profile (prominent odd harmonics with warm even presence)
+  const reedHarmonics = [
     { mult: 1, amp: 1.0 },
-    { mult: 2, amp: 0.58 },
-    { mult: 3, amp: 0.35 },
-    { mult: 4, amp: 0.22 },
-    { mult: 5, amp: 0.14 },
-    { mult: 6, amp: 0.08 },
-    { mult: 7, amp: 0.04 },
+    { mult: 2, amp: 0.65 },
+    { mult: 3, amp: 0.52 },
+    { mult: 4, amp: 0.30 },
+    { mult: 5, amp: 0.22 },
+    { mult: 6, amp: 0.12 },
+    { mult: 7, amp: 0.08 },
   ];
+
+  // Musette detuning: two reeds vibrating slightly apart (2.4 Hz beat) creates authentic accordion shimmer
+  const beatHz = 2.4;
+  const detuneRatio = (freq + beatHz) / freq;
 
   for (let i = 0; i < n; i++) {
     const t = i / sampleRate;
 
-    // Gentle natural vibrato
-    const vibFadeIn = Math.min(1, Math.max(0, (t - 0.06) / 0.12));
-    const vibrato = 1 + 0.005 * vibFadeIn * Math.sin(2 * Math.PI * 5.1 * t);
-
-    // Warm bowing attack & sustained body
-    const bowAtk = Math.min(1, t / 0.05);
-    const releaseTime = 0.18;
+    // Bellows pressure onset and release
+    const attack = Math.min(1, t / 0.035);
+    const releaseTime = 0.06;
     const release = t > durationSec - releaseTime ? (durationSec - t) / releaseTime : 1;
+    const bellows = attack * Math.max(0, release);
 
-    let tone = 0;
-    for (const h of harmonics) {
-      const harmFreq = h.mult * freq * vibrato;
-      tone += h.amp * Math.sin(2 * Math.PI * harmFreq * t);
+    let reed1 = 0;
+    let reed2 = 0;
+    for (const h of reedHarmonics) {
+      const f1 = h.mult * freq;
+      const f2 = h.mult * freq * detuneRatio;
+      reed1 += h.amp * Math.sin(2 * Math.PI * f1 * t);
+      reed2 += h.amp * Math.sin(2 * Math.PI * f2 * t);
     }
 
-    dry[i] = tone * bowAtk * Math.max(0, release) * velocity * 0.42;
+    // Blend primary reed and musette secondary reed (European accordion tremolo)
+    const combined = reed1 * 0.55 + reed2 * 0.45;
+    // Slight reed saturation warmth
+    const saturated = Math.tanh(combined * 1.2);
+
+    out[i] = saturated * bellows * velocity * 0.48;
   }
-
-  // Multi-tap reverb echo line for long atmospheric violin sustain
-  const out = new Float32Array(n);
-  const tap1 = Math.floor(0.045 * sampleRate);
-  const tap2 = Math.floor(0.092 * sampleRate);
-  const tap3 = Math.floor(0.145 * sampleRate);
-
-  for (let i = 0; i < n; i++) {
-    let s = dry[i];
-    if (i >= tap1) s += dry[i - tap1] * 0.38;
-    if (i >= tap2) s += dry[i - tap2] * 0.24;
-    if (i >= tap3) s += dry[i - tap3] * 0.14;
-    out[i] = s;
-  }
-
   return out;
 }
 
 /**
- * Flute: Beautiful concert acoustic flute.
- * Produces a velvety, wooden-round tone with soft harmonic overblowing (2nd & 3rd harmonics),
- * subtle breath air chiff on onset, and expressive warm vibrato that gives it a soothing melodic presence.
+ * Synth Lead: Punchy retro neon synthesizer lead.
+ * Dual detuned analog oscillators (saw + pulse wave) with resonant low-pass filter sweep envelope
+ * and subtle analog drive for that punchy cyberpunk / synthwave lead sound.
  */
-function synthFlute(
+function synthLead(
   freq: number,
-  durationSec = 0.50,
+  durationSec = 0.48,
   sampleRate = SAMPLE_RATE,
   velocity = 0.85
 ): Float32Array {
   const n = Math.floor(durationSec * sampleRate);
   const out = new Float32Array(n);
 
+  // Subtle analog oscillator drift / detuning (fat dual oscillator sound)
+  const detune = 1.006;
+  let phase1 = 0;
+  let phase2 = 0;
+  let filterState = 0;
+
   for (let i = 0; i < n; i++) {
     const t = i / sampleRate;
 
-    // Smooth breath onset: initial air chiff on note attack
-    const chiff = Math.sin(2 * Math.PI * (freq * 3.1) * t) * Math.exp(-t * 80) * 0.12;
+    phase1 += freq / sampleRate;
+    if (phase1 >= 1) phase1 -= 1;
 
-    // Organic flute vibrato (5.2 Hz rate, gently fading in after attack)
-    const vibFade = Math.min(1, Math.max(0, (t - 0.08) / 0.15));
-    const vibrato = 1 + 0.006 * vibFade * Math.sin(2 * Math.PI * 5.2 * t);
-    const f = freq * vibrato;
+    phase2 += (freq * detune) / sampleRate;
+    if (phase2 >= 1) phase2 -= 1;
 
-    // Natural flute harmonic resonance: dominant pure fundamental + soft 2nd and 3rd harmonics
-    const fundamental = Math.sin(2 * Math.PI * f * t);
-    const h2 = Math.sin(2 * Math.PI * 2 * f * t) * 0.22;
-    const h3 = Math.sin(2 * Math.PI * 3 * f * t) * 0.08;
+    // Oscillator 1: Sawtooth wave
+    const saw = 2 * phase1 - 1;
+    // Oscillator 2: Pulse wave with 40% duty cycle
+    const pulse = phase2 < 0.4 ? 1 : -1;
 
-    // Attack envelope and gentle release
-    const attack = Math.min(1, t / 0.045);
+    const rawOsc = saw * 0.6 + pulse * 0.4;
+
+    // Dynamic resonant filter cutoff sweep: opens up bright on attack, decays to warm body
+    const filterEnv = Math.exp(-t * 8.0);
+    const cutoffNorm = Math.min(0.85, 0.18 + 0.65 * filterEnv);
+
+    // 1-pole lowpass filter simulation
+    filterState += cutoffNorm * (rawOsc - filterState);
+
+    // Snappy attack & musical decay envelope
+    const attack = Math.min(1, t / 0.012);
     const releaseTime = 0.08;
     const release = t > durationSec - releaseTime ? (durationSec - t) / releaseTime : 1;
+    const ampEnv = attack * Math.max(0, release) * Math.exp(-t * 0.8);
 
-    out[i] = (chiff + (fundamental + h2 + h3) * 0.85) * attack * Math.max(0, release) * velocity * 0.68;
+    // Analog drive saturation
+    const driven = Math.tanh(filterState * 1.5);
+    out[i] = driven * ampEnv * velocity * 0.55;
   }
   return out;
 }
@@ -394,8 +406,8 @@ export function renderNote(
 ): Float32Array {
   switch (instrument) {
     case 'guitar':    return synthGuitar(freq, durationSec, sampleRate, velocity);
-    case 'violin':    return synthViolin(freq, 0.65, sampleRate, velocity);
-    case 'flute':     return synthFlute(freq, durationSec, sampleRate, velocity);
+    case 'accordion': return synthAccordion(freq, 0.52, sampleRate, velocity);
+    case 'synth':     return synthLead(freq, 0.48, sampleRate, velocity);
     case 'drum':      return synthDrum(freq, durationSec, sampleRate, velocity);
     case 'trumpet':   return synthTrumpet(freq, durationSec, sampleRate, velocity);
     case 'harp':      return synthHarp(freq, durationSec, sampleRate, velocity);
@@ -418,7 +430,7 @@ export function renderTuneWithStepInstruments(
   const numSteps = profile.length;
   if (numSteps === 0) return new Float32Array(0);
 
-  const totalDuration = (numSteps - 1) * stepDuration + noteDuration + 0.3; // extra tail for violin reverb
+  const totalDuration = (numSteps - 1) * stepDuration + noteDuration + 0.3;
   const totalSamples = Math.ceil(totalDuration * sampleRate);
   const buffer = new Float32Array(totalSamples);
 
@@ -426,7 +438,7 @@ export function renderTuneWithStepInstruments(
     const key = valueToPianoKey(profile[step]);
     const freq = key.freq;
     const inst = stepInstruments[step % stepInstruments.length] || 'piano';
-    const dur = inst === 'violin' ? 0.65 : noteDuration;
+    const dur = inst === 'accordion' ? 0.52 : (inst === 'synth' ? 0.48 : noteDuration);
     const noteBuffer = renderNote(freq, inst, dur, sampleRate, 0.75);
     const startSample = Math.floor(step * stepDuration * sampleRate);
 

@@ -25,6 +25,7 @@ interface Props {
   color?: string;
   disabled?: boolean;
   showPoints?: boolean;
+  playbackPoint?: number | null;
 }
 
 const TABLE = 256;
@@ -68,6 +69,7 @@ export function WaveformEditor({
   color = theme.player,
   disabled = false,
   showPoints = true,
+  playbackPoint = null,
 }: Props) {
   const [dragging, setDragging] = useState<number | null>(null);
   const [layout, setLayout] = useState({ width, height });
@@ -211,20 +213,35 @@ export function WaveformEditor({
           strokeLinejoin="round"
         />
 
-        {/* Piano key handles — circles only, no note-name labels */}
+        {/* Live playback beam indicator */}
+        {playbackPoint !== null && playbackPoint !== undefined && handles[playbackPoint] ? (
+          <Line
+            x1={handles[playbackPoint].x}
+            y1={mid - amp - 12}
+            x2={handles[playbackPoint].x}
+            y2={mid + amp + 12}
+            stroke={color}
+            strokeWidth={2}
+            strokeDasharray="4,4"
+            opacity={0.8}
+          />
+        ) : null}
+
+        {/* Piano key handles — circles only, with active drag and playback glow */}
         {showPoints
           ? handles.map((p, i) => {
               const isDrag = dragging === i;
+              const isPlaying = playbackPoint === i;
               return (
                 <G key={`handle-${i}`}>
-                  {/* Handle outer glow when dragging */}
-                  {isDrag ? (
+                  {/* Handle outer glow when dragging or playing */}
+                  {isDrag || isPlaying ? (
                     <Circle
                       cx={p.x}
                       cy={p.y}
-                      r={16}
+                      r={isPlaying ? 20 : 16}
                       fill={color}
-                      opacity={0.3}
+                      opacity={isPlaying ? 0.45 : 0.3}
                     />
                   ) : null}
 
@@ -232,10 +249,10 @@ export function WaveformEditor({
                   <Circle
                     cx={p.x}
                     cy={p.y}
-                    r={isDrag ? 11 : 8.5}
-                    fill={isDrag ? color : theme.bg}
+                    r={isDrag || isPlaying ? 12 : 8.5}
+                    fill={isDrag || isPlaying ? color : theme.bg}
                     stroke={color}
-                    strokeWidth={2.5}
+                    strokeWidth={isPlaying ? 3.5 : 2.5}
                   />
                 </G>
               );
