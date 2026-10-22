@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,14 +15,17 @@ import {
   INSTRUMENTS,
   SingleInstrumentId,
 } from '../audio/instruments';
+import { playFailSound, playStreakDing, playUiTap, playWinFanfare } from '../audio/sfx';
 import { useInstrument } from '../game/InstrumentContext';
 import { useStats } from '../game/StatsContext';
 import { phaseForLevel } from '../game/levels';
 import { gradeColor } from '../game/scoring';
 import { PlaybackSpeed, useGameSession } from '../game/useGameSession';
 import { useLoadingTransition } from '../ui/LoadingTransitionContext';
+import { ConfettiParticles } from '../ui/ConfettiParticles';
 import { InstrumentKeyboardView } from '../ui/InstrumentKeyboardView';
 import { NeonButton } from '../ui/NeonButton';
+import { ScreenShake, type ScreenShakeHandle } from '../ui/ScreenShake';
 import { Waveform } from '../ui/Waveform';
 import { WaveformEditor } from '../ui/WaveformEditor';
 import { mono, theme } from '../ui/theme';
@@ -36,6 +40,7 @@ export default function Play() {
   const [showTarget, setShowTarget] = useState(false);
   const [inputMode, setInputMode] = useState<'keys' | 'wave'>('keys');
   const recorded = useRef<number | null>(null);
+  const shakeRef = useRef<ScreenShakeHandle>(null);
 
   const info = phaseForLevel(session.level.streak);
   const innerWidth = width - 40;
@@ -76,6 +81,11 @@ export default function Play() {
     }, 'Returning to Menu…');
   };
 
+  const onSynchronize = () => {
+    shakeRef.current?.shake(6);
+    session.submit();
+  };
+
   if (session.result) {
     return (
       <ResultView
@@ -107,7 +117,8 @@ export default function Play() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScreenShake ref={shakeRef}>
+        <ScrollView contentContainerStyle={styles.scroll}>
         {/* ── Header ── */}
         <View style={styles.header}>
           <Pressable onPress={onHome} hitSlop={12}>
@@ -144,14 +155,20 @@ export default function Play() {
           <View style={styles.modeSwitchRow}>
             <Pressable
               style={[styles.modeTab, inputMode === 'keys' && styles.modeTabActive]}
-              onPress={() => setInputMode('keys')}>
+              onPress={() => {
+                playUiTap();
+                setInputMode('keys');
+              }}>
               <Text style={[styles.modeTabText, inputMode === 'keys' && styles.modeTabTextActive]}>
                 {session.instrument === 'drum' ? '🥁 DRUM PADS' : '🎹 KEYS MODE'}
               </Text>
             </Pressable>
             <Pressable
               style={[styles.modeTab, inputMode === 'wave' && styles.modeTabActive]}
-              onPress={() => setInputMode('wave')}>
+              onPress={() => {
+                playUiTap();
+                setInputMode('wave');
+              }}>
               <Text style={[styles.modeTabText, inputMode === 'wave' && styles.modeTabTextActive]}>
                 〰 WAVE EDITOR
               </Text>
@@ -233,7 +250,10 @@ export default function Play() {
                 <Pressable
                   key={opt.val}
                   style={[styles.speedBtn, active && styles.speedBtnActive]}
-                  onPress={() => session.setSpeed(opt.val)}>
+                  onPress={() => {
+                    playUiTap();
+                    session.setSpeed(opt.val);
+                  }}>
                   <Text style={[styles.speedText, active && styles.speedTextActive]}>
                     {opt.label}
                   </Text>
@@ -245,7 +265,10 @@ export default function Play() {
           {/* Loop Mode Check */}
           <Pressable
             style={[styles.loopBtn, session.isLooping && styles.loopBtnActive]}
-            onPress={() => session.setIsLooping((prev) => !prev)}>
+            onPress={() => {
+              playUiTap();
+              session.setIsLooping((prev) => !prev);
+            }}>
             <Text style={[styles.loopText, session.isLooping && styles.loopTextActive]}>
               🔁 LOOP {session.isLooping ? 'ON' : 'OFF'}
             </Text>
@@ -281,13 +304,14 @@ export default function Play() {
         )}
 
         <View style={styles.submitWrap}>
-          <NeonButton label="Synchronize" onPress={session.submit} disabled={session.busy} />
+          <NeonButton label="Synchronize" onPress={onSynchronize} disabled={session.busy} />
           <Pressable onPress={session.clear} style={styles.clearBtn} hitSlop={8}>
             <Text style={styles.clearText}>{isMixMode ? 'RESET SEQUENCE' : 'RESET WAVE'}</Text>
           </Pressable>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShake>
+  </SafeAreaView>
   );
 }
 
@@ -320,156 +344,218 @@ function ResultView({
 }) {
   const { width } = useWindowDimensions();
   const innerWidth = width - 40;
-  if (!result) return null;
-  const color = gradeColor(result.grade);
-  const passed = result.match;
+  const shakeRef = useRef<ScreenShakeHandle>(null);
+  const gradeScale = useMemo(() => new Animated.Value(0), []);
+  const [displayedPercent, setDisplayedPercent] = useState(0);
+
+  const color = result ? gradeColor(result.grade) : '#fff';
+  const passed = result ? result.match : false;
   const chosenMeta = INSTRUMENTS.find((i) => i.id === instrument)!;
   const isMixMode = instrument === 'mix';
 
+  useEffect(() => {
+    if (!result) return;
+    if (passed) {
+      playWinFanfare();
+      if (streak >= 2 || result.grade === 'S') {
+        setTimeout(() => playStreakDing(), 450);
+      }
+      setTimeout(() => shakeRef.current?.shake(7), 100);
+    } else {
+      playFailSound();
+      setTimeout(() => shakeRef.current?.shake(12), 80);
+    }
+
+    Animated.spring(gradeScale, {
+      toValue: 1,
+      friction: 3.5,
+      tension: 50,
+      useNativeDriver: true,
+    }).start();
+
+    // Counting up percentage display
+    const target = result.percent;
+    const duration = 700;
+    const steps = 28;
+    const stepVal = target / steps;
+    let curr = 0;
+    const timer = setInterval(() => {
+      curr += stepVal;
+      if (curr >= target) {
+        setDisplayedPercent(target);
+        clearInterval(timer);
+      } else {
+        setDisplayedPercent(curr);
+      }
+    }, duration / steps);
+
+    return () => clearInterval(timer);
+  }, [passed, result, streak, gradeScale]);
+
+  if (!result) return null;
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* ── Grade header ── */}
-        <View style={styles.resultHead}>
-          <Text style={styles.resultLevel}>
-            {passed
-              ? `🔥 STREAK ${streak + 1} ACHIEVED!`
-              : `STREAK ENDED AT ${streak}`} · {chosenMeta.emoji} {chosenMeta.label.toUpperCase()}
-          </Text>
-          <Text style={[styles.gradeBig, { color }]}>{result.grade}</Text>
-          <Text style={[styles.percent, { color }]}>{result.percent.toFixed(1)}%</Text>
-          {result.instrumentsMatched !== undefined ? (
-            <Text style={[styles.resultVerdict, { color: theme.text, marginTop: 4 }]}>
-              {`MATCHED: ${result.instrumentsMatched} / ${result.totalInstruments} INSTRUMENTS`}
-            </Text>
-          ) : (
-            <Text style={styles.resultVerdict}>
-              {passed ? 'STREAK CONTINUES!' : result.grade === 'C' ? 'LOCK ACQUIRED' : 'SIGNAL LOST'}
-            </Text>
+      <ScreenShake ref={shakeRef}>
+        {passed && <ConfettiParticles count={48} />}
+        <ScrollView contentContainerStyle={styles.scroll}>
+          {/* ── Celebratory Victory Banner ── */}
+          {passed && (
+            <View style={[styles.victoryBanner, { borderColor: color }]}>
+              <Text style={[styles.victoryBannerTitle, { color }]}>
+                {result.grade === 'S'
+                  ? '👑 PERFECT HARMONY! 👑'
+                  : streak >= 2
+                  ? '🔥 STREAK ON FIRE! UNSTOPPABLE! 🏆'
+                  : '🎉 HARMONY MATCHED! VICTORY! 🚀'}
+              </Text>
+            </View>
           )}
-        </View>
 
-        {/* ── Compare card: Mix Sequence OR Waveform ── */}
-        {isMixMode && targetNodeInstruments && playerNodeInstruments ? (
-          <View style={styles.mixCompareCard}>
-            <Text style={styles.mixCompareTitle}>INSTRUMENT SEQUENCE COMPARISON</Text>
-            <View style={styles.mixCompareList}>
-              {targetNodeInstruments.map((targetInst, idx) => {
-                const playerInst = playerNodeInstruments[idx] || 'piano';
-                const isMatch = targetInst === playerInst;
-                const targetMeta = INSTRUMENTS.find((i) => i.id === targetInst)!;
-                const playerMeta = INSTRUMENTS.find((i) => i.id === playerInst)!;
-                return (
-                  <View
-                    key={idx}
-                    style={[
-                      styles.mixStepRow,
-                      isMatch ? styles.mixStepMatch : styles.mixStepMismatch,
-                    ]}>
-                    <View style={styles.mixStepNumBadge}>
-                      <Text style={styles.mixStepNumText}>#{idx + 1}</Text>
-                    </View>
+          {/* ── Grade header ── */}
+          <View style={styles.resultHead}>
+            <Text style={styles.resultLevel}>
+              {passed
+                ? `🔥 STREAK ${streak + 1} ACHIEVED!`
+                : `STREAK ENDED AT ${streak}`} · {chosenMeta.emoji} {chosenMeta.label.toUpperCase()}
+            </Text>
+            <Animated.View style={{ transform: [{ scale: gradeScale }] }}>
+              <Text style={[styles.gradeBig, { color }]}>{result.grade}</Text>
+            </Animated.View>
+            <Text style={[styles.percent, { color }]}>{displayedPercent.toFixed(1)}%</Text>
+            {result.instrumentsMatched !== undefined ? (
+              <Text style={[styles.resultVerdict, { color: theme.text, marginTop: 4 }]}>
+                {`MATCHED: ${result.instrumentsMatched} / ${result.totalInstruments} INSTRUMENTS`}
+              </Text>
+            ) : (
+              <Text style={styles.resultVerdict}>
+                {passed ? 'STREAK CONTINUES!' : result.grade === 'C' ? 'LOCK ACQUIRED' : 'SIGNAL LOST'}
+              </Text>
+            )}
+          </View>
 
-                    <View style={styles.mixStepCol}>
-                      <Text style={styles.mixStepColLabel}>TARGET</Text>
-                      <Text style={[styles.mixStepVal, { color: targetMeta.color }]}>
-                        {targetMeta.emoji} {targetMeta.label.toUpperCase()}
-                      </Text>
-                    </View>
-
-                    <Text style={styles.mixStepVs}>vs</Text>
-
-                    <View style={styles.mixStepCol}>
-                      <Text style={styles.mixStepColLabel}>YOURS</Text>
-                      <Text style={[styles.mixStepVal, { color: playerMeta.color }]}>
-                        {playerMeta.emoji} {playerMeta.label.toUpperCase()}
-                      </Text>
-                    </View>
-
+          {/* ── Compare card: Mix Sequence OR Waveform ── */}
+          {isMixMode && targetNodeInstruments && playerNodeInstruments ? (
+            <View style={styles.mixCompareCard}>
+              <Text style={styles.mixCompareTitle}>INSTRUMENT SEQUENCE COMPARISON</Text>
+              <View style={styles.mixCompareList}>
+                {targetNodeInstruments.map((targetInst, idx) => {
+                  const playerInst = playerNodeInstruments[idx] || 'piano';
+                  const isMatch = targetInst === playerInst;
+                  const targetMeta = INSTRUMENTS.find((i) => i.id === targetInst)!;
+                  const playerMeta = INSTRUMENTS.find((i) => i.id === playerInst)!;
+                  return (
                     <View
+                      key={idx}
                       style={[
-                        styles.mixStatusBadge,
-                        {
-                          backgroundColor: isMatch
-                            ? 'rgba(0,245,212,0.18)'
-                            : 'rgba(255,0,127,0.18)',
-                        },
+                        styles.mixStepRow,
+                        isMatch ? styles.mixStepMatch : styles.mixStepMismatch,
                       ]}>
-                      <Text
+                      <View style={styles.mixStepNumBadge}>
+                        <Text style={styles.mixStepNumText}>#{idx + 1}</Text>
+                      </View>
+
+                      <View style={styles.mixStepCol}>
+                        <Text style={styles.mixStepColLabel}>TARGET</Text>
+                        <Text style={[styles.mixStepVal, { color: targetMeta.color }]}>
+                          {targetMeta.emoji} {targetMeta.label.toUpperCase()}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.mixStepVs}>vs</Text>
+
+                      <View style={styles.mixStepCol}>
+                        <Text style={styles.mixStepColLabel}>YOURS</Text>
+                        <Text style={[styles.mixStepVal, { color: playerMeta.color }]}>
+                          {playerMeta.emoji} {playerMeta.label.toUpperCase()}
+                        </Text>
+                      </View>
+
+                      <View
                         style={[
-                          styles.mixStatusText,
-                          { color: isMatch ? '#00f5d4' : '#ff007f' },
+                          styles.mixStatusBadge,
+                          {
+                            backgroundColor: isMatch
+                              ? 'rgba(0,245,212,0.18)'
+                              : 'rgba(255,0,127,0.18)',
+                          },
                         ]}>
-                        {isMatch ? '✓' : '✗'}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.mixStatusText,
+                            { color: isMatch ? '#00f5d4' : '#ff007f' },
+                          ]}>
+                          {isMatch ? '✓' : '✗'}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                );
-              })}
+                  );
+                })}
+              </View>
             </View>
-          </View>
-        ) : (
-          <View style={styles.compareCard}>
-            <View style={styles.legend}>
-              <Text style={[styles.legendItem, { color: theme.target }]}>— TARGET</Text>
-              <Text style={[styles.legendItem, { color: theme.player }]}>— YOURS</Text>
-            </View>
-            <Waveform
-              data={result.targetEvaluation}
-              color={theme.target}
-              width={innerWidth - 24}
-              height={90}
-              dashed
-              strokeWidth={2}
-              baseline
-            />
-            <Waveform
-              data={result.playerEvaluation}
-              color={theme.player}
-              width={innerWidth - 24}
-              height={90}
-              strokeWidth={2.5}
-            />
-          </View>
-        )}
-
-        {/* ── Playback row with Compact Icon Labels ── */}
-        <View style={styles.playRow}>
-          <NeonButton
-            label={activePlaying === 'target' ? '◼ Target' : '▶ Target'}
-            variant="ghost"
-            active={activePlaying === 'target'}
-            activeColor={theme.target}
-            style={styles.flex}
-            onPress={onHearTarget}
-          />
-          <NeonButton
-            label={activePlaying === 'player' ? '◼ Mine' : '▶ Mine'}
-            variant="ghost"
-            active={activePlaying === 'player'}
-            activeColor={theme.player}
-            style={styles.flex}
-            onPress={onHearMine}
-          />
-        </View>
-
-        <View style={styles.actions}>
-          {passed ? (
-            <NeonButton label="Next Level (Keep Streak 🔥)" onPress={onNext} />
           ) : (
-            <NeonButton label="Try Again (New Streak)" onPress={onRetry} />
+            <View style={styles.compareCard}>
+              <View style={styles.legend}>
+                <Text style={[styles.legendItem, { color: theme.target }]}>— TARGET</Text>
+                <Text style={[styles.legendItem, { color: theme.player }]}>— YOURS</Text>
+              </View>
+              <Waveform
+                data={result.targetEvaluation}
+                color={theme.target}
+                width={innerWidth - 24}
+                height={90}
+                dashed
+                strokeWidth={2}
+                baseline
+              />
+              <Waveform
+                data={result.playerEvaluation}
+                color={theme.player}
+                width={innerWidth - 24}
+                height={90}
+                strokeWidth={2.5}
+              />
+            </View>
           )}
-          <NeonButton label="Exit to Menu" variant="ghost" onPress={onHome} />
-        </View>
 
-        {!passed ? (
-          <Text style={styles.failNote}>
-            {isMixMode
-              ? 'Match 40% or more instruments to advance. Tip: use ▶ Target then ▶ Mine to hear which instruments play on each step.'
-              : 'Match 40% or higher to advance. Tip: use ▶ Target then ▶ Mine and study the wave shape differences.'}
-          </Text>
-        ) : null}
-      </ScrollView>
+          {/* ── Playback row with Compact Icon Labels ── */}
+          <View style={styles.playRow}>
+            <NeonButton
+              label={activePlaying === 'target' ? '◼ Target' : '▶ Target'}
+              variant="ghost"
+              active={activePlaying === 'target'}
+              activeColor={theme.target}
+              style={styles.flex}
+              onPress={onHearTarget}
+            />
+            <NeonButton
+              label={activePlaying === 'player' ? '◼ Mine' : '▶ Mine'}
+              variant="ghost"
+              active={activePlaying === 'player'}
+              activeColor={theme.player}
+              style={styles.flex}
+              onPress={onHearMine}
+            />
+          </View>
+
+          <View style={styles.actions}>
+            {passed ? (
+              <NeonButton label="Next Level (Keep Streak 🔥)" onPress={onNext} />
+            ) : (
+              <NeonButton label="Try Again (New Streak)" onPress={onRetry} />
+            )}
+            <NeonButton label="Exit to Menu" variant="ghost" onPress={onHome} />
+          </View>
+
+          {!passed ? (
+            <Text style={styles.failNote}>
+              {isMixMode
+                ? 'Match 40% or more instruments to advance. Tip: use ▶ Target then ▶ Mine to hear which instruments play on each step.'
+                : 'Match 40% or higher to advance. Tip: use ▶ Target then ▶ Mine and study the wave shape differences.'}
+            </Text>
+          ) : null}
+        </ScrollView>
+      </ScreenShake>
     </SafeAreaView>
   );
 }
@@ -727,6 +813,22 @@ const styles = StyleSheet.create({
   clearText: { fontFamily: mono, fontSize: 10, color: theme.textDim, letterSpacing: 2 },
 
   // Result screen
+  victoryBanner: {
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  victoryBannerTitle: {
+    fontFamily: mono,
+    fontSize: 11,
+    letterSpacing: 2,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   resultHead: { alignItems: 'center', marginBottom: 16, paddingTop: 6 },
   resultLevel: { fontFamily: mono, fontSize: 10, color: theme.textDim, letterSpacing: 2 },
   gradeBig: { fontFamily: mono, fontSize: 72, fontWeight: '900', marginTop: 4 },

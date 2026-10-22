@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
+import { useMemo, type ReactNode } from 'react';
+import { Animated, Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 
-import { theme } from './theme';
+import { playUiTap } from '../audio/sfx';
+import { mono, theme } from './theme';
 
 interface Props {
   label: string;
@@ -12,6 +13,7 @@ interface Props {
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
+  haptic?: boolean;
 }
 
 export function NeonButton({
@@ -22,29 +24,63 @@ export function NeonButton({
   activeColor,
   disabled,
   style,
+  haptic = true,
 }: Props) {
+  const scaleAnim = useMemo(() => new Animated.Value(1), []);
   const chosenColor = activeColor || (variant === 'primary' ? theme.player : variant === 'danger' ? theme.danger : theme.textDim);
   const color = active ? (activeColor || theme.target) : chosenColor;
 
+  const handlePressIn = () => {
+    if (disabled) return;
+    Animated.spring(scaleAnim, {
+      toValue: 0.94,
+      friction: 5,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 4,
+      tension: 60,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePress = () => {
+    if (disabled) return;
+    if (haptic) playUiTap();
+    onPress();
+  };
+
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.base,
-        {
-          borderColor: color,
-          opacity: disabled ? 0.35 : pressed ? 0.7 : 1,
-          backgroundColor: active
-            ? `${color}25`
-            : variant === 'primary'
-            ? 'rgba(255,61,240,0.12)'
-            : 'transparent',
-        },
-        style,
-      ]}>
-      <Text style={[styles.label, { color }]}>{label.toUpperCase()}</Text>
-    </Pressable>
+    <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, style]}>
+      <Pressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+        style={({ pressed }) => [
+          styles.base,
+          {
+            borderColor: color,
+            opacity: disabled ? 0.35 : pressed ? 0.75 : 1,
+            backgroundColor: active
+              ? `${color}28`
+              : variant === 'primary'
+              ? 'rgba(255,61,240,0.12)'
+              : 'transparent',
+            shadowColor: color,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: active ? 0.6 : 0.2,
+            shadowRadius: active ? 8 : 4,
+          },
+        ]}>
+        <Text style={[styles.label, { color }]}>{label.toUpperCase()}</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -58,7 +94,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   label: {
-    fontFamily: 'monospace',
+    fontFamily: mono,
     fontWeight: '700',
     fontSize: 13,
     letterSpacing: 2,

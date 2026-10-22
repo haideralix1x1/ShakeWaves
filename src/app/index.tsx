@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Animated,
   Image,
   Pressable,
   ScrollView,
@@ -11,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { INSTRUMENTS } from '../audio/instruments';
+import { playUiTap } from '../audio/sfx';
 
 import { useInstrument } from '../game/InstrumentContext';
 import { useStats } from '../game/StatsContext';
@@ -27,13 +29,20 @@ export default function Home() {
   const { selectedInstrument, setSelectedInstrument } = useInstrument();
   const { transitionTo } = useLoadingTransition();
   const [phase, setPhase] = useState(0);
+  const pulseAnim = useMemo(() => new Animated.Value(1), []);
 
   const target = useMemo(() => tutorialLevel().targetWaveform, []);
 
   useEffect(() => {
     const id = setInterval(() => setPhase((p) => (p + 1) % 100), 60);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.07, duration: 1600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.0, duration: 1600, useNativeDriver: true }),
+      ])
+    ).start();
     return () => clearInterval(id);
-  }, []);
+  }, [pulseAnim]);
 
   const animated = useMemo(() => {
     const shift = (phase / 100) * Math.PI * 2;
@@ -59,11 +68,13 @@ export default function Home() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.hero}>
-          <Image
-            source={require('../../assets/Fevicon.png')}
-            style={styles.heroLogo}
-            resizeMode="contain"
-          />
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <Image
+              source={require('../../assets/Fevicon.png')}
+              style={styles.heroLogo}
+              resizeMode="contain"
+            />
+          </Animated.View>
           <Text style={styles.title}>SHAKE</Text>
           <Text style={styles.titleAccent}>WAVES</Text>
           <Text style={styles.subtitle}>MATCH THE FREQUENCY</Text>
@@ -100,10 +111,17 @@ export default function Home() {
                     styles.instrBtn,
                     isSelected && {
                       borderColor: inst.color,
-                      backgroundColor: `${inst.color}1e`,
+                      backgroundColor: `${inst.color}22`,
+                      shadowColor: inst.color,
+                      shadowOpacity: 0.8,
+                      shadowRadius: 8,
+                      transform: [{ scale: 1.05 }],
                     },
                   ]}
-                  onPress={() => setSelectedInstrument(inst.id)}>
+                  onPress={() => {
+                    playUiTap();
+                    setSelectedInstrument(inst.id);
+                  }}>
                   <Text style={styles.instrEmoji}>{inst.emoji}</Text>
                   <Text
                     style={[
