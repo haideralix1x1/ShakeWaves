@@ -48,7 +48,20 @@ function toAudioBuffer(ctx: AudioContext, samples: Float32Array): AudioBuffer {
 
 /* ------------------------------ Native (expo-audio) ------------------------------ */
 
-const nativePlayers = new Map<number, AudioPlayer>();
+// Max 8 concurrent note players for polyphony (piano chords, glissando, drum hits)
+const NOTE_POOL_SIZE = 8;
+const notePlayerPool: AudioPlayer[] = [];
+let notePoolIndex = 0;
+const notePlayerUris = new Map<AudioPlayer, string>();
+
+// Max 2 players for longer melody previews / loops (Target, Mine, Timeline)
+const PREVIEW_POOL_SIZE = 2;
+const previewPlayerPool: AudioPlayer[] = [];
+let previewPoolIndex = 0;
+const previewPlayerUris = new Map<AudioPlayer, string>();
+
+// Maps active clip ID to the player currently playing it
+const clipPlayerMap = new Map<number, AudioPlayer>();
 
 /* --------------------------------- Registry --------------------------------- */
 
@@ -64,16 +77,14 @@ let webClipId: number | null = null;
 
 /**
  * Registers a raw PCM clip and returns an id used by play/stop/release.
- * Playback mechanism is chosen per platform.
+ * On native, writes the audio file but does NOT allocate a native ExoPlayer
+ * until playback is requested, keeping native AudioTrack count strictly bounded.
  */
 export function loadClip(samples: Float32Array, uriFactory: (s: Float32Array) => string): number {
   const id = nextId++;
-  const clip: Clip = { samples, nativeId: null };
+  const clip: Clip = { samples, nativeId: id };
   if (Platform.OS !== 'web') {
-    clip.nativeId = id;
-    const uri = uriFactory(samples);
-    clip.uri = uri;
-    nativePlayers.set(id, createAudioPlayer({ uri }));
+    clip.uri = uriFactory(samples);
   }
   clips.set(id, clip);
   return id;
@@ -86,19 +97,60 @@ export function playClip(id: number, loop = false, onEnd?: () => void): void {
     playWeb(clip.samples, id, loop, onEnd);
     return;
   }
-  const player = clip.nativeId !== null ? nativePlayers.get(clip.nativeId) : undefined;
-  if (!player) return;
+  if (!clip.uri) return;
+
   try {
-    player.loop = loop;
-    const res = player.seekTo(0);
-    if (res && typeof (res as Promise<void>).then === 'function') {
-      (res as Promise<void>).then(() => player.play()).catch(() => player.play());
-      return;
+    let player: AudioPlayer;
+
+    if (loop || onEnd) {
+      // Use preview player pool for loops / long arrangements
+      if (previewPlayerPool.length < PREVIEW_POOL_SIZE) {
+        player = createAudioPlayer({ uri: clip.uri });
+        previewPlayerUris.set(player, clip.uri);
+        previewPlayerPool.push(player);
+      } else {
+        player = previewPlayerPool[previewPoolIndex];
+        previewPoolIndex = (previewPoolIndex + 1) % PREVIEW_POOL_SIZE;
+        if (previewPlayerUris.get(player) !== clip.uri) {
+          previewPlayerUris.set(player, clip.uri);
+          player.replace({ uri: clip.uri });
+        }
+      }
+    } else {
+      // Use bounded note player pool for rapid instrument notes / glissando
+      if (notePlayerPool.length < NOTE_POOL_SIZE) {
+        player = createAudioPlayer({ uri: clip.uri });
+        notePlayerUris.set(player, clip.uri);
+        notePlayerPool.push(player);
+      } else {
+        player = notePlayerPool[notePoolIndex];
+        notePoolIndex = (notePoolIndex + 1) % NOTE_POOL_SIZE;
+        if (notePlayerUris.get(player) !== clip.uri) {
+          notePlayerUris.set(player, clip.uri);
+          player.replace({ uri: clip.uri });
+        }
+      }
     }
+
+    clipPlayerMap.set(id, player);
+    player.loop = loop;
+
+    if (onEnd) {
+      let sub: any = null;
+      const onStatus = (status: any) => {
+        if (status?.didJustFinish) {
+          sub?.remove?.();
+          onEnd();
+        }
+      };
+      sub = player.addListener('playbackStatusUpdate', onStatus);
+    }
+
+    player.seekTo(0);
+    player.play();
   } catch {
-    // player may still be loading; play() will start from 0
+    // ignore native play errors
   }
-  player.play();
 }
 
 function playWeb(samples: Float32Array, id: number, loop = false, onEnd?: () => void): void {
@@ -145,8 +197,8 @@ export function stopClip(id: number): void {
     if (webClipId === id) stopWeb();
     return;
   }
-  if (!clip?.nativeId) return;
-  const player = nativePlayers.get(clip.nativeId);
+  if (!clip) return;
+  const player = clipPlayerMap.get(id);
   if (!player) return;
   try {
     player.loop = false;
@@ -170,19 +222,12 @@ function stopWeb(): void {
 export function releaseClip(id: number): void {
   const clip = clips.get(id);
   clips.delete(id);
+  clipPlayerMap.delete(id);
   if (Platform.OS === 'web') {
     if (webClipId === id) stopWeb();
     return;
   }
-  if (!clip?.nativeId) return;
-  const player = nativePlayers.get(clip.nativeId);
-  nativePlayers.delete(clip.nativeId);
-  try {
-    player?.remove();
-  } catch {
-    // ignore
-  }
-  if (clip.uri && clip.uri.startsWith('file://')) {
+  if (clip?.uri && clip.uri.startsWith('file://')) {
     try {
       new File(clip.uri).delete();
     } catch {
@@ -193,7 +238,6 @@ export function releaseClip(id: number): void {
 
 export function isClipPlaying(id: number): boolean {
   if (Platform.OS === 'web') return webClipId === id;
-  const clip = clips.get(id);
-  if (!clip?.nativeId) return false;
-  return !!nativePlayers.get(clip.nativeId)?.playing;
+  const player = clipPlayerMap.get(id);
+  return !!player?.playing;
 }

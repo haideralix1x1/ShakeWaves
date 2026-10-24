@@ -38,6 +38,7 @@ yarn-error.*
 
 # root test screenshots
 /*.png
+*.apk
 
 # generated native folders
 /ios

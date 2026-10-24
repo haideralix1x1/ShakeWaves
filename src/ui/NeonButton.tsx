@@ -32,6 +32,7 @@ export function NeonButton({
 
   const handlePressIn = () => {
     if (disabled) return;
+    if (haptic) playUiTap();
     Animated.spring(scaleAnim, {
       toValue: 0.94,
       friction: 5,
@@ -51,7 +52,6 @@ export function NeonButton({
 
   const handlePress = () => {
     if (disabled) return;
-    if (haptic) playUiTap();
     onPress();
   };
 

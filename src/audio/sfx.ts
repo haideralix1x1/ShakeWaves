@@ -1,10 +1,39 @@
 import * as Haptics from 'expo-haptics';
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { Asset } from 'expo-asset';
 
 import { loadClip, playClip } from './player';
 import { bufferToAudioUri } from './storage';
 import { SAMPLE_RATE } from './wav';
 import { renderNote, type InstrumentId, type SingleInstrumentId } from './instruments';
 import { getSelectedInstrument } from '../game/InstrumentContext';
+
+let menuClickPlayer: AudioPlayer | null = null;
+let clickAssetLocalUri: string | null = null;
+
+/**
+ * Pre-warms and downloads ClickSFX.ogg into the local filesystem
+ * for instantaneous 0-latency playback on menu button presses.
+ */
+export async function preloadClickSfx(): Promise<void> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const req = require('../../assets/ClickSFX.ogg');
+    const assets = await Asset.loadAsync(req);
+    const localUri = assets[0]?.localUri || assets[0]?.uri;
+    if (localUri) {
+      clickAssetLocalUri = localUri;
+      if (!menuClickPlayer) {
+        menuClickPlayer = createAudioPlayer({ uri: localUri });
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to preload ClickSFX.ogg:', err);
+  }
+}
+
+// Preload immediately upon module load
+preloadClickSfx().catch(() => {});
 
 // Cached clip IDs for instant zero-latency playback
 const instrumentTapClips = new Map<InstrumentId, number>();
@@ -134,7 +163,7 @@ function getInstrumentTapClip(inst: InstrumentId): number {
 /* ------------------------------- Public SFX API ------------------------------- */
 
 /**
- * Plays a signature UI tap staccato note tuned to the selected instrument + subtle haptic feedback.
+ * Plays the tactile menu ClickSFX.ogg audio with haptic feedback.
  */
 export function playUiTap(inst?: InstrumentId): void {
   try {
@@ -142,6 +171,28 @@ export function playUiTap(inst?: InstrumentId): void {
   } catch {
     // optional
   }
+
+  // 1. Play real ClickSFX.ogg on menu & UI taps
+  try {
+    if (!menuClickPlayer) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const req = require('../../assets/ClickSFX.ogg');
+      const asset = Asset.fromModule(req);
+      const uri = clickAssetLocalUri || asset.localUri || asset.uri;
+      if (uri) {
+        menuClickPlayer = createAudioPlayer({ uri });
+      }
+    }
+    if (menuClickPlayer) {
+      menuClickPlayer.seekTo(0);
+      menuClickPlayer.play();
+      return;
+    }
+  } catch (err) {
+    console.warn('Click SFX playback failed, using fallback:', err);
+  }
+
+  // 2. Fallback to synthesized acoustic tap
   try {
     const targetInst = inst || getSelectedInstrument();
     const clipId = getInstrumentTapClip(targetInst);

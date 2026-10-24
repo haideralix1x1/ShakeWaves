@@ -3,7 +3,7 @@
     "name": "ShakeWaves",
     "slug": "ShakeWaves",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "scheme": "shakewaves",
@@ -35,7 +35,8 @@
       "expo-audio",
       "expo-router",
       "expo-status-bar",
-      "expo-asset"
+      "expo-asset",
+      "expo-sharing"
     ],
     "extra": {
       "router": {

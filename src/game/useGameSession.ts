@@ -27,6 +27,7 @@ function shapingCurve(profile: number[]): number[] {
 export interface Session {
   level: Level;
   profile: number[];
+  playerTimestamps: number[];
   result: ScoreResult | null;
   selectedPoint: number;
   busy: boolean;
@@ -44,7 +45,8 @@ export interface Session {
   setPlayerNodeInstrument: (nodeIndex: number, inst: SingleInstrumentId) => void;
   playInstrumentPreview: (inst: SingleInstrumentId) => void;
   setSelectedPoint: (i: number) => void;
-  updatePoint: (i: number, v: number) => void;
+  updatePoint: (i: number, v: number, timestampSec?: number) => void;
+  updateTimestamps: (timestamps: number[]) => void;
   playNote: (v: number, nodeIndex?: number, instOverride?: SingleInstrumentId) => void;
   submit: () => void;
   retrySame: () => void;
@@ -113,6 +115,14 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     initialState.playerNodeInstruments
   );
   const playerNodeInstrumentsRef = useRef<SingleInstrumentId[]>(initialState.playerNodeInstruments);
+
+  const [playerTimestamps, setPlayerTimestamps] = useState<number[]>(() =>
+    Array.from({ length: initialState.level.pointCount }, (_, i) => i * 0.24)
+  );
+  const playerTimestampsRef = useRef<number[]>(playerTimestamps);
+  useEffect(() => {
+    playerTimestampsRef.current = playerTimestamps;
+  }, [playerTimestamps]);
 
   const targetClip = useRef<number | null>(null);
   const playerClip = useRef<number | null>(null);
@@ -220,16 +230,34 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
   const targetData = level.targetWaveform;
   const playerData = shapingCurve(profile);
 
-  const updatePoint = useCallback((i: number, v: number) => {
+  const updatePoint = useCallback((i: number, v: number, timestampSec?: number) => {
     setProfile((prev) => {
       const next = prev.slice();
       next[i] = v;
       return next;
     });
+    if (timestampSec !== undefined) {
+      setPlayerTimestamps((prev) => {
+        const next = prev.slice();
+        next[i] = timestampSec;
+        playerTimestampsRef.current = next;
+        return next;
+      });
+    }
     setSelectedPoint(i);
   }, []);
 
+  const updateTimestamps = useCallback((timestamps: number[]) => {
+    playerTimestampsRef.current = timestamps.slice();
+    setPlayerTimestamps(timestamps.slice());
+  }, []);
+
   const clear = useCallback(() => {
+    const stepDur = getStepDuration(speed);
+    const defaultTimestamps = Array.from({ length: level.pointCount }, (_, i) => i * stepDur);
+    playerTimestampsRef.current = defaultTimestamps;
+    setPlayerTimestamps(defaultTimestamps);
+
     if (gameInstrument === 'mix') {
       setProfile(level.targetProfile.slice());
       const defaultInsts = new Array(level.pointCount).fill('piano');
@@ -241,7 +269,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     setResult(null);
     setSelectedPoint(0);
     clearPlayingState();
-  }, [gameInstrument, level.pointCount, level.targetProfile, clearPlayingState]);
+  }, [gameInstrument, level.pointCount, level.targetProfile, speed, getStepDuration, clearPlayingState]);
 
   const stopPlayback = useCallback(() => {
     if (targetClip.current !== null) stopClip(targetClip.current);
@@ -256,6 +284,11 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
       setLevel(lv);
       setResult(null);
       setSelectedPoint(0);
+
+      const stepDur = getStepDuration(speed);
+      const defaultTimestamps = Array.from({ length: lv.pointCount }, (_, i) => i * stepDur);
+      playerTimestampsRef.current = defaultTimestamps;
+      setPlayerTimestamps(defaultTimestamps);
 
       if (gameInstrument === 'mix') {
         setProfile(lv.targetProfile.slice());
@@ -272,7 +305,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
         setPlayerNodeInstruments(uniform);
       }
     },
-    [gameInstrument, releasePlayerClip, stopPlayback]
+    [gameInstrument, speed, getStepDuration, releasePlayerClip, stopPlayback]
   );
 
   const previewTarget = useCallback(() => {
@@ -306,8 +339,9 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     const stepDur = getStepDuration(speed);
     const melodyProfile = gameInstrument === 'mix' ? level.targetProfile : profile;
     const instruments = gameInstrument === 'mix' ? playerNodeInstrumentsRef.current : playerNodeInstruments;
+    const currentTimestamps = playerTimestampsRef.current;
     playerClip.current = loadClip(
-      renderTuneWithStepInstruments(melodyProfile, instruments, undefined, stepDur),
+      renderTuneWithStepInstruments(melodyProfile, instruments, undefined, stepDur, undefined, currentTimestamps),
       bufferToAudioUri
     );
     setActivePlaying('player');
@@ -315,33 +349,58 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
 
     // Live step highlight ticker for sequence buttons & waveform nodes
     if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
-    const stepMs = stepDur * 1000;
     const totalSteps = melodyProfile.length;
     setPlaybackStepIndex(0);
     const startTime = Date.now();
+    const lastTimestamp = (currentTimestamps && currentTimestamps.length >= totalSteps)
+      ? currentTimestamps[totalSteps - 1]
+      : (totalSteps - 1) * stepDur;
+    const totalDurationMs = (lastTimestamp + 0.45 + 0.1) * 1000;
 
     playbackTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const step = Math.floor(elapsed / stepMs);
-      if (step < totalSteps) {
-        setPlaybackStepIndex(step);
-      } else {
-        if (isLooping) {
-          setPlaybackStepIndex(step % totalSteps);
+      const elapsedSec = (Date.now() - startTime) / 1000;
+      if (currentTimestamps && currentTimestamps.length >= totalSteps) {
+        // Find current step matching recorded rhythm
+        let step = totalSteps - 1;
+        for (let s = 0; s < totalSteps; s++) {
+          const nextTime = s < totalSteps - 1 ? currentTimestamps[s + 1] : lastTimestamp + 0.45;
+          if (elapsedSec >= currentTimestamps[s] && elapsedSec < nextTime) {
+            step = s;
+            break;
+          }
+        }
+        if (elapsedSec < lastTimestamp + 0.45) {
+          setPlaybackStepIndex(step);
         } else {
-          if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
-          playbackTimerRef.current = null;
-          setPlaybackStepIndex(null);
+          if (isLooping) {
+            setPlaybackStepIndex(0);
+          } else {
+            if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
+            playbackTimerRef.current = null;
+            setPlaybackStepIndex(null);
+          }
+        }
+      } else {
+        const step = Math.floor(elapsedSec / stepDur);
+        if (step < totalSteps) {
+          setPlaybackStepIndex(step);
+        } else {
+          if (isLooping) {
+            setPlaybackStepIndex(step % totalSteps);
+          } else {
+            if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
+            playbackTimerRef.current = null;
+            setPlaybackStepIndex(null);
+          }
         }
       }
     }, 25);
 
     if (!isLooping) {
-      const approxDurationMs = (melodyProfile.length * stepDur + 0.6) * 1000;
       playingTimer.current = setTimeout(() => {
         setActivePlaying((curr) => (curr === 'player' ? null : curr));
         setPlaybackStepIndex(null);
-      }, approxDurationMs);
+      }, totalDurationMs + 200);
     }
   }, [activePlaying, gameInstrument, level.targetProfile, profile, playerNodeInstruments, speed, isLooping, getStepDuration, releasePlayerClip, stopPlayback]);
 
@@ -350,14 +409,16 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     stopPlayback();
     setBusy(true);
     try {
+      const stepDur = getStepDuration(speed);
+      const currentTimestamps = playerTimestampsRef.current;
       const scored = gameInstrument === 'mix'
-        ? scoreMixLevel(targetNodeInstruments, playerNodeInstruments, level)
-        : scoreLevel(level, profile);
+        ? scoreMixLevel(targetNodeInstruments, playerNodeInstruments, level, currentTimestamps, stepDur)
+        : scoreLevel(level, profile, currentTimestamps, stepDur);
       setResult(scored);
       releasePlayerClip();
       const melodyProfile = gameInstrument === 'mix' ? level.targetProfile : profile;
       playerClip.current = loadClip(
-        renderTuneWithStepInstruments(melodyProfile, playerNodeInstruments, undefined, getStepDuration(speed)),
+        renderTuneWithStepInstruments(melodyProfile, playerNodeInstruments, undefined, stepDur, undefined, currentTimestamps),
         bufferToAudioUri
       );
     } finally {
@@ -367,6 +428,11 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
 
   const retrySame = useCallback(() => {
     stopPlayback();
+    const stepDur = getStepDuration(speed);
+    const defaultTimestamps = Array.from({ length: level.pointCount }, (_, i) => i * stepDur);
+    playerTimestampsRef.current = defaultTimestamps;
+    setPlayerTimestamps(defaultTimestamps);
+
     if (gameInstrument === 'mix') {
       setProfile(level.targetProfile.slice());
       setPlayerNodeInstruments(new Array(level.pointCount).fill('piano'));
@@ -375,7 +441,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     }
     setResult(null);
     setSelectedPoint(0);
-  }, [gameInstrument, level.pointCount, level.targetProfile, stopPlayback]);
+  }, [gameInstrument, level.pointCount, level.targetProfile, speed, getStepDuration, stopPlayback]);
 
   const next = useCallback(() => {
     stopPlayback();
@@ -390,6 +456,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
   return {
     level,
     profile,
+    playerTimestamps,
     result,
     selectedPoint,
     busy,
@@ -408,6 +475,7 @@ export function useGameSession(gameInstrument: InstrumentId = 'piano', startingS
     playInstrumentPreview,
     setSelectedPoint,
     updatePoint,
+    updateTimestamps,
     playNote,
     playPianoNote: playNote,
     submit,

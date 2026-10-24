@@ -209,7 +209,6 @@ function synthLead(
   const n = Math.floor(durationSec * sampleRate);
   const out = new Float32Array(n);
 
-  // Subtle analog oscillator drift / detuning (fat dual oscillator sound)
   const detune = 1.006;
   let phase1 = 0;
   let phase2 = 0;
@@ -218,35 +217,32 @@ function synthLead(
   for (let i = 0; i < n; i++) {
     const t = i / sampleRate;
 
-    phase1 += freq / sampleRate;
-    if (phase1 >= 1) phase1 -= 1;
-
-    phase2 += (freq * detune) / sampleRate;
-    if (phase2 >= 1) phase2 -= 1;
+    phase1 = (phase1 + freq / sampleRate) % 1;
+    phase2 = (phase2 + (freq * detune) / sampleRate) % 1;
 
     // Oscillator 1: Sawtooth wave
     const saw = 2 * phase1 - 1;
-    // Oscillator 2: Pulse wave with 40% duty cycle
-    const pulse = phase2 < 0.4 ? 1 : -1;
+    // Oscillator 2: Pulse wave with 45% duty cycle
+    const pulse = phase2 < 0.45 ? 1 : -1;
 
     const rawOsc = saw * 0.6 + pulse * 0.4;
 
     // Dynamic resonant filter cutoff sweep: opens up bright on attack, decays to warm body
     const filterEnv = Math.exp(-t * 8.0);
-    const cutoffNorm = Math.min(0.85, 0.18 + 0.65 * filterEnv);
+    const cutoffNorm = Math.min(0.85, 0.22 + 0.65 * filterEnv);
 
     // 1-pole lowpass filter simulation
     filterState += cutoffNorm * (rawOsc - filterState);
 
     // Snappy attack & musical decay envelope
     const attack = Math.min(1, t / 0.012);
-    const releaseTime = 0.08;
+    const releaseTime = 0.06;
     const release = t > durationSec - releaseTime ? (durationSec - t) / releaseTime : 1;
-    const ampEnv = attack * Math.max(0, release) * Math.exp(-t * 0.8);
+    const ampEnv = attack * Math.max(0, release) * Math.exp(-t * 1.5);
 
     // Analog drive saturation
-    const driven = Math.tanh(filterState * 1.5);
-    out[i] = driven * ampEnv * velocity * 0.55;
+    const driven = Math.tanh(filterState * 1.6);
+    out[i] = driven * ampEnv * velocity * 0.75;
   }
   return out;
 }
@@ -268,34 +264,32 @@ function synthDrum(
 
   if (freq < 330) {
     // ── SOLID PUNCHY KICK DRUM ──
-    // Solid mid-punch (sweeping 260Hz down to 95Hz) so it punches clearly on phone speakers,
-    // plus a beater impact click (1.8kHz transient) for immediate percussive punch.
     const startFreq = 260;
     const bodyFreq = 95;
+    let phase = 0;
     for (let i = 0; i < n; i++) {
       const t = i / sampleRate;
-      // Fast pitch sweep delivers a physical thump on small drivers
       const pitch = bodyFreq + (startFreq - bodyFreq) * Math.exp(-t * 55);
-      // Hard beater click transient
+      phase += (2 * Math.PI * pitch) / sampleRate;
       const beaterClick = Math.sin(2 * Math.PI * 1800 * t) * Math.exp(-t * 220) * 0.45;
-      // Resonant punchy body tone with 2nd harmonic warmth
       const body =
-        (Math.sin(2 * Math.PI * pitch * t) * 0.75 +
-         Math.sin(2 * Math.PI * pitch * 2 * t) * 0.25) * Math.exp(-t * 11.0);
+        (Math.sin(phase) * 0.75 + Math.sin(phase * 2) * 0.25) * Math.exp(-t * 11.0);
       out[i] = (beaterClick + body) * velocity * 0.95;
     }
   } else if (freq < 450) {
     // ── SNARE & TOM ──
     const tomFreq = freq * 0.5;
+    let phase = 0;
     for (let i = 0; i < n; i++) {
       const t = i / sampleRate;
+      const pitch = tomFreq * Math.exp(-t * 18);
+      phase += (2 * Math.PI * pitch) / sampleRate;
       const noise = (Math.random() * 2 - 1) * Math.exp(-t * 28) * 0.55;
-      const shell = Math.sin(2 * Math.PI * tomFreq * Math.exp(-t * 18) * t) * Math.exp(-t * 12) * 0.55;
+      const shell = Math.sin(phase) * Math.exp(-t * 12) * 0.55;
       out[i] = (noise + shell) * velocity * 0.85;
     }
   } else {
     // ── SPLASH CYMBAL / HI-HAT ──
-    // Inharmonic metallic noise burst with sizzle decay
     for (let i = 0; i < n; i++) {
       const t = i / sampleRate;
       const metalNoise = (Math.random() * 2 - 1);
@@ -304,19 +298,19 @@ function synthDrum(
          Math.sin(2 * Math.PI * 6300 * t) +
          Math.sin(2 * Math.PI * 8700 * t)) * 0.15;
       const sizzle = (metalNoise * 0.6 + splashChime) * Math.exp(-t * 9.5);
-      out[i] = sizzle * velocity * 0.75;
+      out[i] = sizzle * velocity * 0.8;
     }
   }
 
   return out;
 }
 
-/** Trumpet: bright brass warmth */
+/** Trumpet: bright brass warmth with natural attack and brass resonance */
 function synthTrumpet(
   freq: number,
-  durationSec: number,
-  sampleRate: number,
-  velocity: number
+  durationSec = 0.45,
+  sampleRate = SAMPLE_RATE,
+  velocity = 0.85
 ): Float32Array {
   const n = Math.floor(durationSec * sampleRate);
   const out = new Float32Array(n);
@@ -330,64 +324,75 @@ function synthTrumpet(
   ];
   for (let i = 0; i < n; i++) {
     const t = i / sampleRate;
-    const brassAtk = Math.min(1, t / 0.025);
-    const rel = t > durationSec - 0.03 ? (durationSec - t) / 0.03 : 1;
+    const brassAtk = Math.min(1, t / 0.02);
+    const rel = t > durationSec - 0.04 ? (durationSec - t) / 0.04 : 1;
+    const bodyDecay = Math.exp(-t * 1.8);
     let s = 0;
     for (const h of harmonics) {
-      s += h.amp * Math.sin(2 * Math.PI * h.mult * freq * t);
+      if (h.mult * freq < sampleRate * 0.48) {
+        s += h.amp * Math.sin(2 * Math.PI * h.mult * freq * t);
+      }
     }
-    out[i] = s * brassAtk * Math.max(0, rel) * velocity * 0.45;
+    out[i] = s * brassAtk * bodyDecay * Math.max(0, rel) * velocity * 0.42;
   }
   return out;
 }
 
-/** Harp: plucked, bright with rich chime decay */
+/** Harp: plucked, bright with rich shimmering chime decay */
 function synthHarp(
   freq: number,
-  durationSec: number,
-  sampleRate: number,
-  velocity: number
+  durationSec = 0.45,
+  sampleRate = SAMPLE_RATE,
+  velocity = 0.85
 ): Float32Array {
   const n = Math.floor(durationSec * sampleRate);
   const out = new Float32Array(n);
   const harmonics = [
-    { mult: 1, amp: 1.0, decay: 1.8 },
-    { mult: 2, amp: 0.5, decay: 2.8 },
-    { mult: 3, amp: 0.2, decay: 4.0 },
-    { mult: 4, amp: 0.1, decay: 6.0 },
+    { mult: 1, amp: 1.0, decay: 2.2 },
+    { mult: 2, amp: 0.5, decay: 3.2 },
+    { mult: 3, amp: 0.25, decay: 4.8 },
+    { mult: 4, amp: 0.12, decay: 6.8 },
   ];
+  const pluck = (t: number) => Math.exp(-t * 160) * Math.sin(2 * Math.PI * 1200 * t) * 0.15;
   for (let i = 0; i < n; i++) {
     const t = i / sampleRate;
-    let s = 0;
+    let s = pluck(t);
     for (const h of harmonics) {
-      s += h.amp * Math.exp(-h.decay * t) * Math.sin(2 * Math.PI * h.mult * freq * t);
+      if (h.mult * freq < sampleRate * 0.48) {
+        s += h.amp * Math.exp(-h.decay * t) * Math.sin(2 * Math.PI * h.mult * freq * t);
+      }
     }
-    out[i] = s * velocity * 0.7;
+    const atk = Math.min(1, t / 0.002);
+    out[i] = s * atk * velocity * 0.72;
   }
   return out;
 }
 
-/** Xylophone: pleasant wooden mallet chime */
+/** Xylophone: pleasant wooden mallet chime with warm mallet impact transient */
 function synthXylophone(
   freq: number,
-  durationSec: number,
-  sampleRate: number,
-  velocity: number
+  durationSec = 0.45,
+  sampleRate = SAMPLE_RATE,
+  velocity = 0.85
 ): Float32Array {
   const n = Math.floor(durationSec * sampleRate);
   const out = new Float32Array(n);
   const harmonics = [
-    { mult: 1, amp: 1.0, decay: 8.0 },
-    { mult: 2.756, amp: 0.4, decay: 14.0 },
-    { mult: 5.404, amp: 0.2, decay: 22.0 },
+    { mult: 1, amp: 1.0, decay: 8.5 },
+    { mult: 2.756, amp: 0.45, decay: 15.0 },
+    { mult: 5.404, amp: 0.2, decay: 24.0 },
   ];
   for (let i = 0; i < n; i++) {
     const t = i / sampleRate;
-    let s = 0;
+    const mallet = Math.exp(-t * 180) * Math.sin(2 * Math.PI * 850 * t) * 0.2;
+    let s = mallet;
     for (const h of harmonics) {
-      s += h.amp * Math.exp(-h.decay * t) * Math.sin(2 * Math.PI * h.mult * freq * t);
+      if (h.mult * freq < sampleRate * 0.48) {
+        s += h.amp * Math.exp(-h.decay * t) * Math.sin(2 * Math.PI * h.mult * freq * t);
+      }
     }
-    out[i] = s * velocity * 0.75;
+    const atk = Math.min(1, t / 0.002);
+    out[i] = s * atk * velocity * 0.75;
   }
   return out;
 }
@@ -425,12 +430,16 @@ export function renderTuneWithStepInstruments(
   stepInstruments: SingleInstrumentId[],
   sampleRate = SAMPLE_RATE,
   stepDuration = 0.24,
-  noteDuration = 0.45
+  noteDuration = 0.45,
+  timestamps?: number[]
 ): Float32Array {
   const numSteps = profile.length;
   if (numSteps === 0) return new Float32Array(0);
 
-  const totalDuration = (numSteps - 1) * stepDuration + noteDuration + 0.3;
+  const lastOffset = (timestamps && timestamps.length >= numSteps)
+    ? timestamps[numSteps - 1]
+    : (numSteps - 1) * stepDuration;
+  const totalDuration = Math.max(0.8, lastOffset + noteDuration + 0.3);
   const totalSamples = Math.ceil(totalDuration * sampleRate);
   const buffer = new Float32Array(totalSamples);
 
@@ -440,7 +449,8 @@ export function renderTuneWithStepInstruments(
     const inst = stepInstruments[step % stepInstruments.length] || 'piano';
     const dur = inst === 'accordion' ? 0.52 : (inst === 'synth' ? 0.48 : noteDuration);
     const noteBuffer = renderNote(freq, inst, dur, sampleRate, 0.75);
-    const startSample = Math.floor(step * stepDuration * sampleRate);
+    const noteStartSec = (timestamps && timestamps.length > step) ? timestamps[step] : step * stepDuration;
+    const startSample = Math.max(0, Math.floor(noteStartSec * sampleRate));
 
     for (let i = 0; i < noteBuffer.length; i++) {
       const outIdx = startSample + i;

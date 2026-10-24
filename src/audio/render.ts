@@ -17,23 +17,61 @@ export interface PianoKeyInfo {
   note: string;
   freq: number;
   value: number;
+  isBlack?: boolean;
 }
 
 export const PIANO_KEYS: readonly PianoKeyInfo[] = [
-  { note: 'C4', freq: 261.63, value: -1.0 },
-  { note: 'D4', freq: 293.66, value: -0.75 },
-  { note: 'E4', freq: 329.63, value: -0.5 },
-  { note: 'F4', freq: 349.23, value: -0.25 },
-  { note: 'G4', freq: 392.0, value: 0.0 },
-  { note: 'A4', freq: 440.0, value: 0.25 },
-  { note: 'B4', freq: 493.88, value: 0.5 },
-  { note: 'C5', freq: 523.25, value: 0.75 },
-  { note: 'D5', freq: 587.33, value: 1.0 },
+  // Octave 3 (Low Bass)
+  { note: 'C3',  freq: 130.81, value: -2.75 },
+  { note: 'C#3', freq: 138.59, value: -2.625, isBlack: true },
+  { note: 'D3',  freq: 146.83, value: -2.5 },
+  { note: 'D#3', freq: 155.56, value: -2.375, isBlack: true },
+  { note: 'E3',  freq: 164.81, value: -2.25 },
+  { note: 'F3',  freq: 174.61, value: -2.0 },
+  { note: 'F#3', freq: 185.00, value: -1.875, isBlack: true },
+  { note: 'G3',  freq: 196.00, value: -1.75 },
+  { note: 'G#3', freq: 207.65, value: -1.625, isBlack: true },
+  { note: 'A3',  freq: 220.00, value: -1.5 },
+  { note: 'A#3', freq: 233.08, value: -1.375, isBlack: true },
+  { note: 'B3',  freq: 246.94, value: -1.25 },
+
+  // Octave 4 (Standard Middle Octave)
+  { note: 'C4',  freq: 261.63, value: -1.0 },
+  { note: 'C#4', freq: 277.18, value: -0.875, isBlack: true },
+  { note: 'D4',  freq: 293.66, value: -0.75 },
+  { note: 'D#4', freq: 311.13, value: -0.625, isBlack: true },
+  { note: 'E4',  freq: 329.63, value: -0.5 },
+  { note: 'F4',  freq: 349.23, value: -0.25 },
+  { note: 'F#4', freq: 369.99, value: -0.125, isBlack: true },
+  { note: 'G4',  freq: 392.00, value: 0.0 },
+  { note: 'G#4', freq: 415.30, value: 0.125, isBlack: true },
+  { note: 'A4',  freq: 440.00, value: 0.25 },
+  { note: 'A#4', freq: 466.16, value: 0.375, isBlack: true },
+  { note: 'B4',  freq: 493.88, value: 0.5 },
+
+  // Octave 5 (Treble)
+  { note: 'C5',  freq: 523.25, value: 0.75 },
+  { note: 'C#5', freq: 554.37, value: 0.875, isBlack: true },
+  { note: 'D5',  freq: 587.33, value: 1.0 },
+  { note: 'D#5', freq: 622.25, value: 1.125, isBlack: true },
+  { note: 'E5',  freq: 659.25, value: 1.25 },
+  { note: 'F5',  freq: 698.46, value: 1.5 },
+  { note: 'F#5', freq: 739.99, value: 1.625, isBlack: true },
+  { note: 'G5',  freq: 783.99, value: 1.75 },
+  { note: 'G#5', freq: 830.61, value: 1.875, isBlack: true },
+  { note: 'A5',  freq: 880.00, value: 2.0 },
+  { note: 'A#5', freq: 932.33, value: 2.125, isBlack: true },
+  { note: 'B5',  freq: 987.77, value: 2.25 },
+
+  // Octave 6 (High Brilliance)
+  { note: 'C6',  freq: 1046.50, value: 2.5 },
 ] as const;
 
 export function valueToPianoKey(val: number): PianoKeyInfo {
-  const clamped = Math.max(-1, Math.min(1, val));
-  let best = PIANO_KEYS[0];
+  const minVal = PIANO_KEYS[0].value;
+  const maxVal = PIANO_KEYS[PIANO_KEYS.length - 1].value;
+  const clamped = Math.max(minVal, Math.min(maxVal, val));
+  let best: PianoKeyInfo = PIANO_KEYS[0];
   let bestDiff = Infinity;
   for (let i = 0; i < PIANO_KEYS.length; i++) {
     const k = PIANO_KEYS[i];

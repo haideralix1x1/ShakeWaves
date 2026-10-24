@@ -121,7 +121,12 @@ export default function Play() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScreenShake ref={shakeRef}>
-        <View style={styles.content}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          keyboardShouldPersistTaps="handled">
         {/* ── Header ── */}
         <View style={styles.header}>
           <Pressable onPress={onHome} hitSlop={12}>
@@ -188,7 +193,6 @@ export default function Play() {
                 <Waveform
                   data={session.playerData}
                   color={chosenMeta.color}
-                  width={innerWidth - 24}
                   height={36}
                   strokeWidth={2}
                 />
@@ -198,9 +202,11 @@ export default function Play() {
             <InstrumentKeyboardView
               key={`${session.instrument}-${session.level.streak}-${clearCount}`}
               profile={session.profile}
+              timestamps={session.playerTimestamps}
               selectedStep={session.selectedPoint}
               onSelectStep={session.setSelectedPoint}
               onNoteChange={session.updatePoint}
+              onTimestampsChange={session.updateTimestamps}
               instrument={session.instrument}
               stepInstruments={session.playerNodeInstruments}
               targetStepInstruments={session.targetNodeInstruments}
@@ -208,6 +214,7 @@ export default function Play() {
               onStepInstrumentChange={session.setPlayerNodeInstrument}
               onPlayNote={(v, nodeIdx, inst) => session.playNote(v, nodeIdx, inst)}
               onAutoPlay={() => session.previewPlayer(true)}
+              onStopPlayback={session.stopPlayback}
               onResetCycle={() => {
                 session.stopPlayback();
                 session.setSelectedPoint(0);
@@ -223,14 +230,16 @@ export default function Play() {
               <Text style={styles.stageLabel} numberOfLines={1}>
                 {`MELODY: ${chosenMeta.emoji} ${chosenMeta.label.toUpperCase()}`}
               </Text>
-              <Text style={styles.stageHint}>DRAG NODES</Text>
+              <Text style={styles.stageHint}>DRAG NODES (PITCH & RHYTHM)</Text>
             </View>
             <WaveformEditor
               profile={session.profile}
+              timestamps={session.playerTimestamps}
               onChange={session.updatePoint}
+              onTimestampsChange={session.updateTimestamps}
               onNoteChange={(v) => session.playNote(v, session.selectedPoint)}
               onSelectPoint={session.setSelectedPoint}
-              width={innerWidth}
+              width={innerWidth - 16}
               height={200}
               color={chosenMeta.color}
               playbackPoint={session.activePlaying === 'player' ? session.playbackStepIndex : null}
@@ -241,12 +250,18 @@ export default function Play() {
         {/* ── Target hint (pure wave line only, no text/data/numbers) ── */}
         {!isMixMode && showTarget ? (
           <View style={styles.targetCard}>
+            <View style={styles.targetCardHeader}>
+              <Text style={styles.targetCardTitle}>🎯 TARGET SHAPE HINT</Text>
+              <Pressable onPress={() => setShowTarget(false)} hitSlop={8}>
+                <Text style={styles.targetCardClose}>✕ HIDE</Text>
+              </Pressable>
+            </View>
             <Waveform
               data={session.targetData}
               color={theme.target}
-              width={innerWidth - 16}
-              height={100}
-              opacity={0.9}
+              height={48}
+              strokeWidth={2}
+              opacity={0.92}
               fill
             />
           </View>
@@ -327,7 +342,7 @@ export default function Play() {
             <Text style={styles.clearText}>{isMixMode ? 'RESET SEQUENCE' : 'RESET WAVE'}</Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </ScreenShake>
   </SafeAreaView>
   );
@@ -360,8 +375,6 @@ function ResultView({
   targetNodeInstruments?: SingleInstrumentId[];
   playerNodeInstruments?: SingleInstrumentId[];
 }) {
-  const { width } = useWindowDimensions();
-  const innerWidth = width - 40;
   const shakeRef = useRef<ScreenShakeHandle>(null);
   const gradeScale = useMemo(() => new Animated.Value(0), []);
   const [displayedPercent, setDisplayedPercent] = useState(0);
@@ -450,6 +463,45 @@ function ResultView({
                 {passed ? 'STREAK CONTINUES!' : result.grade === 'C' ? 'LOCK ACQUIRED' : 'SIGNAL LOST'}
               </Text>
             )}
+
+            {/* 50% Rhythm + 50% Note/Inst Score Breakdown */}
+            <View style={styles.scoreBreakdownWrap}>
+              <View style={styles.scoreBreakdownCard}>
+                <View style={styles.scoreBreakdownRow}>
+                  <Text style={styles.scoreBreakdownLabel}>🥁 RHYTHM MATCH (50%)</Text>
+                  <Text style={[styles.scoreBreakdownValue, { color: '#00f5d4' }]}>
+                    +{result.rhythmScore.toFixed(1)} / 50 pts
+                  </Text>
+                </View>
+                <View style={styles.scoreBarTrack}>
+                  <View
+                    style={[
+                      styles.scoreBarFill,
+                      { width: `${Math.min(100, (result.rhythmScore / 50) * 100)}%`, backgroundColor: '#00f5d4' },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.scoreBreakdownCard}>
+                <View style={styles.scoreBreakdownRow}>
+                  <Text style={styles.scoreBreakdownLabel}>
+                    {isMixMode ? '🎛️ INSTRUMENT MATCH (50%)' : '🎹 NOTE / KEY MATCH (50%)'}
+                  </Text>
+                  <Text style={[styles.scoreBreakdownValue, { color: '#ff3df0' }]}>
+                    +{result.notesOrInstScore.toFixed(1)} / 50 pts
+                  </Text>
+                </View>
+                <View style={styles.scoreBarTrack}>
+                  <View
+                    style={[
+                      styles.scoreBarFill,
+                      { width: `${Math.min(100, (result.notesOrInstScore / 50) * 100)}%`, backgroundColor: '#ff3df0' },
+                    ]}
+                  />
+                </View>
+              </View>
+            </View>
           </View>
 
           {/* ── Compare card: Mix Sequence OR Waveform ── */}
@@ -525,7 +577,6 @@ function ResultView({
               <Waveform
                 data={result.targetEvaluation}
                 color={theme.target}
-                width={innerWidth - 24}
                 height={90}
                 dashed
                 strokeWidth={2}
@@ -534,7 +585,6 @@ function ResultView({
               <Waveform
                 data={result.playerEvaluation}
                 color={theme.player}
-                width={innerWidth - 24}
                 height={90}
                 strokeWidth={2.5}
               />
@@ -587,6 +637,14 @@ function ResultView({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
+  scroll: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+    flexGrow: 1,
+    justifyContent: 'space-between',
+  },
   content: {
     flex: 1,
     paddingHorizontal: 16,
@@ -740,8 +798,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: 'rgba(5, 7, 13, 0.6)',
     paddingVertical: 4,
+    paddingHorizontal: 6,
     borderWidth: 1,
     borderColor: 'rgba(28, 42, 69, 0.4)',
+    overflow: 'hidden',
   },
 
   // Stage / editor card
@@ -752,6 +812,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.panel,
     padding: 8,
     marginBottom: 6,
+    overflow: 'hidden',
   },
   stageHeader: {
     flexDirection: 'row',
@@ -774,10 +835,31 @@ const styles = StyleSheet.create({
   targetCard: {
     borderWidth: 1,
     borderColor: 'rgba(0,229,255,0.4)',
-    borderRadius: 14,
-    backgroundColor: 'rgba(0,229,255,0.05)',
-    padding: 10,
-    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,229,255,0.06)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+  },
+  targetCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  targetCardTitle: {
+    fontFamily: mono,
+    fontSize: 9,
+    color: theme.target,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+  targetCardClose: {
+    fontFamily: mono,
+    fontSize: 9,
+    color: theme.textDim,
+    fontWeight: '700',
   },
 
   // Playback speed and loop row
@@ -840,10 +922,10 @@ const styles = StyleSheet.create({
   // Play/action rows
   playRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
   flex: { flex: 1 },
-  peek: { alignItems: 'center', paddingVertical: 10 },
-  peekText: { fontFamily: mono, fontSize: 10, color: theme.textDim, letterSpacing: 1 },
-  submitWrap: { marginTop: 4, gap: 6 },
-  clearBtn: { alignItems: 'center', paddingVertical: 4 },
+  peek: { alignItems: 'center', paddingVertical: 6 },
+  peekText: { fontFamily: mono, fontSize: 9.5, color: theme.textDim, letterSpacing: 1 },
+  submitWrap: { marginTop: 4, gap: 6, paddingBottom: 6 },
+  clearBtn: { alignItems: 'center', paddingVertical: 6 },
   clearText: { fontFamily: mono, fontSize: 10, color: theme.textDim, letterSpacing: 2 },
 
   // Result screen
@@ -970,6 +1052,49 @@ const styles = StyleSheet.create({
   },
   legend: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   legendItem: { fontFamily: mono, fontSize: 10, letterSpacing: 2 },
+  scoreBreakdownWrap: {
+    width: '100%',
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  scoreBreakdownCard: {
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  scoreBreakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  scoreBreakdownLabel: {
+    fontFamily: mono,
+    fontSize: 9.5,
+    letterSpacing: 1,
+    color: theme.textDim,
+    fontWeight: '700',
+  },
+  scoreBreakdownValue: {
+    fontFamily: mono,
+    fontSize: 10.5,
+    letterSpacing: 1,
+    fontWeight: '800',
+  },
+  scoreBarTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+  },
+  scoreBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
   actions: { gap: 8, marginTop: 8 },
   failNote: {
     fontFamily: mono,

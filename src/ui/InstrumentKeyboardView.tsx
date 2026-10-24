@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -19,16 +20,19 @@ import { mono, theme } from './theme';
 
 interface Props {
   profile: number[];
+  timestamps?: number[];
   selectedStep: number;
   onSelectStep: (step: number) => void;
-  onNoteChange: (step: number, value: number) => void;
+  onNoteChange: (step: number, value: number, timestampSec?: number) => void;
+  onTimestampsChange?: (timestamps: number[]) => void;
   instrument: InstrumentId;
   stepInstruments?: SingleInstrumentId[];
   targetStepInstruments?: SingleInstrumentId[];
   activePlaying?: 'target' | 'player' | null;
-  onStepInstrumentChange?: (step: number, inst: SingleInstrumentId) => void;
+  onStepInstrumentChange?: (step: number, inst: SingleInstrumentId, timestampSec?: number) => void;
   onPlayNote: (value: number, nodeIndex?: number, inst?: SingleInstrumentId) => void;
   onAutoPlay?: () => void;
+  onStopPlayback?: () => void;
   onResetCycle?: () => void;
   color?: string;
   playbackStep?: number | null;
@@ -36,21 +40,31 @@ interface Props {
 
 // Drum pad definitions mapping directly to PIANO_KEYS pitches
 const DRUM_PADS = [
-  { label: 'KICK',    sub: 'Sub Thump',    emoji: '🥁', value: -1.0,  note: 'C4' },
-  { label: 'PUNCH',   sub: 'Hard Beater',  emoji: '🥊', value: -0.75, note: 'D4' },
-  { label: 'LOW TOM', sub: 'Deep Shell',   emoji: '🪘', value: -0.5,  note: 'E4' },
-  { label: 'MID TOM', sub: 'Resonant Tom', emoji: '🪘', value: -0.25, note: 'F4' },
-  { label: 'SNARE',   sub: 'Crisp Rim',    emoji: '🎯', value: 0.0,   note: 'G4' },
-  { label: 'HI-HAT',  sub: 'Tight Hat',    emoji: '🎩', value: 0.5,   note: 'B4' },
-  { label: 'SPLASH',  sub: 'Shimmer Cym',  emoji: '💥', value: 0.75,  note: 'C5' },
-  { label: 'CRASH',   sub: 'Loud Crash',   emoji: '⚡', value: 1.0,   note: 'D5' },
+  { label: 'SUB KICK',    sub: 'Sub Thump',    emoji: '🥁', value: -1.0,   note: 'C4' },
+  { label: 'PUNCH KICK',  sub: 'Hard Beater',  emoji: '🥊', value: -0.75,  note: 'D4' },
+  { label: 'CRISP SNARE', sub: 'Crisp Rim',    emoji: '🎯', value: 0.0,    note: 'G4' },
+  { label: 'FAT SNARE',   sub: 'Heavy Shell',  emoji: '💥', value: -0.5,   note: 'E4' },
+  { label: 'SIDE STICK',  sub: 'Wooden Click', emoji: '🥢', value: -0.125, note: 'F#4' },
+  { label: '808 CLAP',    sub: 'Stereo Slap',  emoji: '👏', value: 0.25,   note: 'A4' },
+  { label: 'CLOSED HAT',  sub: 'Tight Hat',    emoji: '🎩', value: 0.5,    note: 'B4' },
+  { label: 'OPEN HAT',    sub: 'Sizzle Wash',  emoji: '✨', value: 0.875,  note: 'C#5' },
+  { label: 'PEDAL HAT',   sub: 'Foot Chic',    emoji: '👞', value: 0.125,  note: 'G#4' },
+  { label: 'LOW TOM',     sub: 'Deep Shell',   emoji: '🪘', value: -0.25,  note: 'F4' },
+  { label: 'MID TOM',     sub: 'Warm Tom',     emoji: '🪘', value: 0.375,  note: 'A#4' },
+  { label: 'HIGH TOM',    sub: 'Bright Tom',   emoji: '🪘', value: 0.625,  note: 'C5' },
+  { label: 'SPLASH',      sub: 'Shimmer Cym',  emoji: '💫', value: 0.75,   note: 'C5' },
+  { label: 'CRASH',       sub: 'Loud Crash',   emoji: '⚡', value: 1.0,    note: 'D5' },
+  { label: 'RIDE BELL',   sub: 'Ping Bell',    emoji: '🛎️', value: 1.25,   note: 'E5' },
+  { label: 'COWBELL',     sub: '808 Bell',     emoji: '🔔', value: 1.5,    note: 'F5' },
 ];
 
 export function InstrumentKeyboardView({
   profile,
+  timestamps,
   selectedStep,
   onSelectStep,
   onNoteChange,
+  onTimestampsChange,
   instrument,
   stepInstruments,
   targetStepInstruments,
@@ -58,6 +72,7 @@ export function InstrumentKeyboardView({
   onStepInstrumentChange,
   onPlayNote,
   onAutoPlay,
+  onStopPlayback,
   onResetCycle,
   color = theme.player,
   playbackStep = null,
@@ -65,19 +80,13 @@ export function InstrumentKeyboardView({
   // Active instrument for currently selected step (in Mix Mode, each step has its own instrument)
   const isMix = instrument === 'mix';
   const totalSteps = profile.length;
-  const [prevProfileLength, setPrevProfileLength] = useState(profile.length);
   const [recordStep, setRecordStep] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [lastPressedVal, setLastPressedVal] = useState<number | null>(null);
   const [lastPressedInst, setLastPressedInst] = useState<SingleInstrumentId | null>(null);
 
-  if (profile.length !== prevProfileLength) {
-    setPrevProfileLength(profile.length);
-    setRecordStep(0);
-    setIsRecording(false);
-    setLastPressedVal(null);
-    setLastPressedInst(null);
-  }
+  const recordingStartRef = useRef<number>(0);
+  const recordedTimestampsRef = useRef<number[]>([]);
 
   const isComplete = recordStep >= totalSteps;
 
@@ -94,7 +103,7 @@ export function InstrumentKeyboardView({
     ? (stepInstruments?.[playbackStep] || null)
     : null;
 
-  const toggleRecording = () => {
+  const toggleRecording = useCallback(() => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch {
@@ -102,21 +111,23 @@ export function InstrumentKeyboardView({
     }
     playUiTap();
 
-    if (activePlaying) {
-      onResetCycle?.();
+    if (activePlaying === 'player') {
+      onStopPlayback?.();
     }
 
     setIsRecording((prev) => {
       const next = !prev;
-      if (next && recordStep >= totalSteps) {
+      if (next) {
         setRecordStep(0);
         onSelectStep(0);
+        recordingStartRef.current = 0; // Wait for first note tap to begin timer
+        recordedTimestampsRef.current = [];
       }
       return next;
     });
-  };
+  }, [activePlaying, onSelectStep, onStopPlayback]);
 
-  const handleKeyPress = (val: number) => {
+  const handleKeyPress = useCallback((val: number) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
@@ -127,8 +138,8 @@ export function InstrumentKeyboardView({
     setLastPressedVal(val);
 
     // If currently playing audio, stop it
-    if (activePlaying) {
-      onResetCycle?.();
+    if (activePlaying === 'player') {
+      onStopPlayback?.();
     }
 
     // TEST MODE ONLY: if recording is OFF, freely play the sound without modifying sequence!
@@ -141,10 +152,22 @@ export function InstrumentKeyboardView({
     let targetStep = recordStep;
     if (targetStep >= totalSteps) {
       targetStep = 0;
+      recordingStartRef.current = 0;
+      recordedTimestampsRef.current = [];
     }
 
-    // 1. Record note for target step
-    onNoteChange(targetStep, val);
+    // Calculate real-time timestamp for rhythm matching
+    let timestampSec = 0;
+    if (recordingStartRef.current === 0) {
+      recordingStartRef.current = Date.now();
+      timestampSec = 0;
+    } else {
+      timestampSec = (Date.now() - recordingStartRef.current) / 1000;
+    }
+    recordedTimestampsRef.current[targetStep] = timestampSec;
+
+    // 1. Record note and timestamp for target step
+    onNoteChange(targetStep, val, timestampSec);
     onSelectStep(targetStep);
 
     // 2. Play note for target step with the current instrument
@@ -153,23 +176,38 @@ export function InstrumentKeyboardView({
     const nextStep = targetStep + 1;
     setRecordStep(nextStep);
 
-    // 3. If cycle completed, automatically trigger playback of "Mine" and return to test mode
+    // 3. When target task length is reached, stop recording immediately and trigger playback of "Mine"
     if (nextStep >= totalSteps) {
       setIsRecording(false);
+      const finishedTimestamps = [...recordedTimestampsRef.current];
+      onTimestampsChange?.(finishedTimestamps);
       setTimeout(() => {
         onAutoPlay?.();
       }, 280);
     }
-  };
+  }, [
+    activePlaying,
+    currentStepInst,
+    isRecording,
+    onAutoPlay,
+    onNoteChange,
+    onPlayNote,
+    onSelectStep,
+    onStopPlayback,
+    onTimestampsChange,
+    recordStep,
+    selectedStep,
+    totalSteps,
+  ]);
 
-  const handleStepSlotPress = (idx: number) => {
+  const handleStepSlotPress = useCallback((idx: number) => {
     try {
       Haptics.selectionAsync();
     } catch {
       // Haptics optional
     }
-    if (activePlaying) {
-      onResetCycle?.();
+    if (activePlaying === 'player') {
+      onStopPlayback?.();
     }
     setRecordStep(idx);
     onSelectStep(idx);
@@ -180,9 +218,9 @@ export function InstrumentKeyboardView({
     if (isMix && stepInstruments?.[idx]) {
       setLastPressedInst(stepInstruments[idx]);
     }
-  };
+  }, [activePlaying, instrument, isMix, onPlayNote, onSelectStep, onStopPlayback, profile, stepInstruments]);
 
-  const handleMixInstrumentPress = (instId: SingleInstrumentId) => {
+  const handleMixInstrumentPress = useCallback((instId: SingleInstrumentId) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
@@ -193,8 +231,8 @@ export function InstrumentKeyboardView({
     setLastPressedInst(instId);
 
     // If currently playing audio, stop it
-    if (activePlaying) {
-      onResetCycle?.();
+    if (activePlaying === 'player') {
+      onStopPlayback?.();
     }
 
     // TEST MODE ONLY: if recording is OFF, freely preview instrument sound without recording!
@@ -208,10 +246,22 @@ export function InstrumentKeyboardView({
     let targetStep = recordStep;
     if (targetStep >= totalSteps) {
       targetStep = 0;
+      recordingStartRef.current = 0;
+      recordedTimestampsRef.current = [];
     }
 
-    // 1. Record instrument for target step
-    onStepInstrumentChange?.(targetStep, instId);
+    // Calculate real-time timestamp for rhythm matching
+    let timestampSec = 0;
+    if (recordingStartRef.current === 0) {
+      recordingStartRef.current = Date.now();
+      timestampSec = 0;
+    } else {
+      timestampSec = (Date.now() - recordingStartRef.current) / 1000;
+    }
+    recordedTimestampsRef.current[targetStep] = timestampSec;
+
+    // 1. Record instrument and timestamp for target step
+    onStepInstrumentChange?.(targetStep, instId, timestampSec);
     onSelectStep(targetStep);
 
     // 2. Play note for target step with the selected instrument
@@ -221,16 +271,31 @@ export function InstrumentKeyboardView({
     const nextStep = targetStep + 1;
     setRecordStep(nextStep);
 
-    // 3. If cycle completed, automatically trigger playback of "Mine" and return to test mode
+    // 3. When target task length is reached, stop recording immediately and trigger playback of "Mine"
     if (nextStep >= totalSteps) {
       setIsRecording(false);
+      const finishedTimestamps = [...recordedTimestampsRef.current];
+      onTimestampsChange?.(finishedTimestamps);
       setTimeout(() => {
         onAutoPlay?.();
       }, 280);
     }
-  };
+  }, [
+    activePlaying,
+    isRecording,
+    onAutoPlay,
+    onPlayNote,
+    onSelectStep,
+    onStepInstrumentChange,
+    onStopPlayback,
+    onTimestampsChange,
+    profile,
+    recordStep,
+    selectedStep,
+    totalSteps,
+  ]);
 
-  const handleResetCycle = () => {
+  const handleResetCycle = useCallback(() => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch {
@@ -242,8 +307,10 @@ export function InstrumentKeyboardView({
     setIsRecording(false);
     setLastPressedVal(null);
     setLastPressedInst(null);
+    recordingStartRef.current = 0;
+    recordedTimestampsRef.current = [];
     onResetCycle?.();
-  };
+  }, [onResetCycle, onSelectStep]);
 
   return (
     <View style={styles.container}>
@@ -560,55 +627,117 @@ function PianoKeyboard({
   onPressKey: (val: number) => void;
   accentColor: string;
 }) {
+  const scrollRef = useRef<any>(null);
+  const WHITE_KEY_WIDTH = 46;
+  const BLACK_KEY_WIDTH = 28;
+
+  const { whiteKeys, blackKeys } = useMemo(() => {
+    const whites: (typeof PIANO_KEYS[number] & { whiteIndex: number })[] = [];
+    const blacks: (typeof PIANO_KEYS[number] & { whiteIndex: number })[] = [];
+    let wCount = 0;
+    for (const k of PIANO_KEYS) {
+      if (k.isBlack) {
+        blacks.push({ ...k, whiteIndex: wCount - 1 });
+      } else {
+        whites.push({ ...k, whiteIndex: wCount });
+        wCount++;
+      }
+    }
+    return { whiteKeys: whites, blackKeys: blacks };
+  }, []);
+
   return (
     <View style={styles.pianoWrap}>
-      <Text style={styles.surfaceHint}>
-        TAP A PIANO KEY TO TEST OR RECORD PITCH
-      </Text>
-      <View style={styles.pianoKeysRow}>
-        {PIANO_KEYS.map((k) => {
-          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.12;
-          const isPlayingThisKey = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
-          return (
-            <Pressable
-              key={k.note}
-              style={[
-                styles.pianoKey,
-                isActive && {
-                  backgroundColor: `${accentColor}40`,
-                  borderColor: accentColor,
-                  borderBottomWidth: 5,
-                  borderBottomColor: accentColor,
-                },
-                isPlayingThisKey && {
-                  backgroundColor: '#00f5d4',
-                  borderColor: '#ffffff',
-                  borderBottomWidth: 6,
-                  borderBottomColor: '#00f5d4',
-                  transform: [{ scale: 1.06 }],
-                  zIndex: 10,
-                },
-              ]}
-              onPress={() => onPressKey(k.value)}>
-              <Text
-                style={[
-                  styles.pianoKeyNote,
-                  isActive && { color: accentColor, fontWeight: '900' },
-                  isPlayingThisKey && { color: '#000000', fontWeight: '900' },
-                ]}>
-                {k.note}
-              </Text>
-              <Text
-                style={[
-                  styles.pianoKeyFreq,
-                  isPlayingThisKey && { color: '#000000', fontWeight: '800' },
-                ]}>
-                {Math.round(k.freq)}Hz
-              </Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.scrollHeader}>
+        <Text style={styles.surfaceHint}>
+          TAP KEYS FOR INSTANT PLAYBACK · 37 PIANO KEYS
+        </Text>
+        <Text style={styles.scrollBadge}>‹ SCROLL ‹ ›</Text>
       </View>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={true}
+        contentContainerStyle={[styles.pianoScrollContent, { width: whiteKeys.length * WHITE_KEY_WIDTH + 16 }]}>
+        <View style={styles.pianoKeysContainer}>
+          {/* White keys row */}
+          <View style={styles.whiteKeysRow}>
+            {whiteKeys.map((k) => {
+              const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.08;
+              const isPlayingThisKey = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.08;
+              return (
+                <Pressable
+                  key={k.note}
+                  style={[
+                    styles.pianoKey,
+                    { width: WHITE_KEY_WIDTH },
+                    isActive && {
+                      backgroundColor: `${accentColor}40`,
+                      borderColor: accentColor,
+                      borderBottomWidth: 5,
+                      borderBottomColor: accentColor,
+                    },
+                    isPlayingThisKey && {
+                      backgroundColor: '#00f5d4',
+                      borderColor: '#ffffff',
+                      borderBottomWidth: 6,
+                      borderBottomColor: '#00f5d4',
+                      transform: [{ scale: 1.05 }],
+                      zIndex: 10,
+                    },
+                  ]}
+                  onPressIn={() => onPressKey(k.value)}>
+                  <Text
+                    style={[
+                      styles.pianoKeyNote,
+                      isActive && { color: accentColor, fontWeight: '900' },
+                      isPlayingThisKey && { color: '#000000', fontWeight: '900' },
+                    ]}>
+                    {k.note}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.pianoKeyFreq,
+                      isPlayingThisKey && { color: '#000000', fontWeight: '800' },
+                    ]}>
+                    {Math.round(k.freq)}Hz
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Black keys overlaid on top */}
+          <View style={styles.blackKeysOverlay} pointerEvents="box-none">
+            {blackKeys.map((k) => {
+              const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.08;
+              const isPlayingThisKey = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.08;
+              const leftPos = (k.whiteIndex + 0.65) * WHITE_KEY_WIDTH;
+              return (
+                <Pressable
+                  key={k.note}
+                  style={[
+                    styles.blackKey,
+                    { left: leftPos, width: BLACK_KEY_WIDTH },
+                    isActive && {
+                      backgroundColor: accentColor,
+                      borderColor: '#ffffff',
+                    },
+                    isPlayingThisKey && {
+                      backgroundColor: '#00f5d4',
+                      borderColor: '#ffffff',
+                      transform: [{ scale: 1.08 }],
+                      zIndex: 20,
+                    },
+                  ]}
+                  onPressIn={() => onPressKey(k.value)}>
+                  <Text style={styles.blackKeyText}>{k.note.replace(/[0-9]/g, '')}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -626,47 +755,66 @@ function DrumPads({
   onPressPad: (val: number) => void;
   accentColor: string;
 }) {
+  const drumScrollRef = useRef<any>(null);
+  const row1 = DRUM_PADS.slice(0, 8);
+  const row2 = DRUM_PADS.slice(8);
+
+  const renderPad = (pad: typeof DRUM_PADS[number]) => {
+    const isActive = activeValue !== null && activeValue !== undefined && Math.abs(pad.value - activeValue) < 0.08;
+    const isPlayingThisPad = playbackValue !== null && playbackValue !== undefined && Math.abs(pad.value - playbackValue) < 0.08;
+    return (
+      <Pressable
+        key={pad.label}
+        style={[
+          styles.drumPad,
+          isActive && {
+            borderColor: accentColor,
+            backgroundColor: `${accentColor}30`,
+          },
+          isPlayingThisPad && {
+            borderColor: '#00f5d4',
+            backgroundColor: 'rgba(0, 245, 212, 0.45)',
+            transform: [{ scale: 1.08 }],
+            borderWidth: 2.5,
+            zIndex: 10,
+          },
+        ]}
+        onPressIn={() => onPressPad(pad.value)}>
+        <Text style={styles.drumPadEmoji}>{pad.emoji}</Text>
+        <Text
+          style={[
+            styles.drumPadLabel,
+            isActive && { color: accentColor, fontWeight: '900' },
+            isPlayingThisPad && { color: '#00f5d4', fontWeight: '900' },
+          ]}
+          numberOfLines={1}>
+          {pad.label}
+        </Text>
+        <Text style={styles.drumPadSub} numberOfLines={1}>{pad.sub}</Text>
+      </Pressable>
+    );
+  };
+
   return (
     <View style={styles.drumWrap}>
-      <Text style={styles.surfaceHint}>
-        TAP A DRUM PAD TO TEST OR RECORD PERCUSSION
-      </Text>
-      <View style={styles.drumGrid}>
-        {DRUM_PADS.map((pad) => {
-          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(pad.value - activeValue) < 0.12;
-          const isPlayingThisPad = playbackValue !== null && playbackValue !== undefined && Math.abs(pad.value - playbackValue) < 0.12;
-          return (
-            <Pressable
-              key={pad.label}
-              style={[
-                styles.drumPad,
-                isActive && {
-                  borderColor: accentColor,
-                  backgroundColor: `${accentColor}30`,
-                },
-                isPlayingThisPad && {
-                  borderColor: '#00f5d4',
-                  backgroundColor: 'rgba(0, 245, 212, 0.45)',
-                  transform: [{ scale: 1.08 }],
-                  borderWidth: 2.5,
-                  zIndex: 10,
-                },
-              ]}
-              onPress={() => onPressPad(pad.value)}>
-              <Text style={styles.drumPadEmoji}>{pad.emoji}</Text>
-              <Text
-                style={[
-                  styles.drumPadLabel,
-                  isActive && { color: accentColor, fontWeight: '900' },
-                  isPlayingThisPad && { color: '#00f5d4', fontWeight: '900' },
-                ]}>
-                {pad.label}
-              </Text>
-              <Text style={styles.drumPadSub}>{pad.sub}</Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.scrollHeader}>
+        <Text style={styles.surfaceHint}>
+          TAP A DRUM PAD TO TRIGGER PERCUSSION
+        </Text>
+        <Text style={styles.scrollBadge}>‹ SCROLL ‹ ›</Text>
       </View>
+      <ScrollView
+        ref={drumScrollRef}
+        key="game-drum-scroll"
+        horizontal
+        showsHorizontalScrollIndicator={true}
+        contentOffset={{ x: 0, y: 0 }}
+        contentContainerStyle={styles.drumScrollContent}>
+        <View style={styles.drumTwoRowsContainer}>
+          <View style={styles.drumRow}>{row1.map(renderPad)}</View>
+          <View style={styles.drumRow}>{row2.map(renderPad)}</View>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -684,66 +832,76 @@ function GuitarFretboard({
   onPressString: (val: number) => void;
   accentColor: string;
 }) {
+  const naturalKeys = useMemo(() => PIANO_KEYS.filter((k) => !k.isBlack), []);
+
   return (
     <View style={styles.guitarWrap}>
-      <Text style={styles.surfaceHint}>
-        TAP AN ACOUSTIC STRING TO TEST OR RECORD NOTE
-      </Text>
-      <View style={styles.guitarStringsList}>
-        {PIANO_KEYS.map((k, i) => {
-          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.12;
-          const isPlayingThisFret = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
-          const stringGirth = Math.max(1.5, 4.5 - i * 0.35);
-          return (
-            <Pressable
-              key={k.note}
-              style={[
-                styles.guitarStringRow,
-                isActive && {
-                  backgroundColor: `${accentColor}25`,
-                  borderColor: accentColor,
-                },
-                isPlayingThisFret && {
-                  backgroundColor: 'rgba(0, 245, 212, 0.35)',
-                  borderColor: '#00f5d4',
-                  borderWidth: 2,
-                  transform: [{ scale: 1.03 }],
-                  zIndex: 10,
-                },
-              ]}
-              onPress={() => onPressString(k.value)}>
-              <Text
-                style={[
-                  styles.guitarNoteText,
-                  isActive && { color: accentColor, fontWeight: '800' },
-                  isPlayingThisFret && { color: '#00f5d4', fontWeight: '900' },
-                ]}>
-                {k.note}
-              </Text>
-
-              {/* Graphical guitar string with metallic glow */}
-              <View style={styles.guitarWireTrack}>
-                <View
-                  style={[
-                    styles.guitarWire,
-                    { height: stringGirth },
-                    isActive && { backgroundColor: accentColor, shadowColor: accentColor, shadowOpacity: 1, shadowRadius: 4 },
-                    isPlayingThisFret && { backgroundColor: '#00f5d4', shadowColor: '#00f5d4', shadowOpacity: 1, shadowRadius: 6 },
-                  ]}
-                />
-              </View>
-
-              <Text
-                style={[
-                  styles.guitarFreqText,
-                  isPlayingThisFret && { color: '#00f5d4', fontWeight: '800' },
-                ]}>
-                {Math.round(k.freq)}Hz
-              </Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.scrollHeader}>
+        <Text style={styles.surfaceHint}>
+          TAP AN ACOUSTIC STRING / FRET TO TEST OR RECORD
+        </Text>
+        <Text style={styles.scrollBadge}>‹ SCROLL ‹ ›</Text>
       </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={true}
+        contentContainerStyle={styles.guitarScrollContent}>
+        <View style={styles.guitarFretsRow}>
+          {naturalKeys.map((k, i) => {
+            const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.08;
+            const isPlayingThisFret = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.08;
+            const stringGirth = Math.max(1.5, 4.5 - (i % 6) * 0.5);
+            return (
+              <Pressable
+                key={k.note}
+                style={[
+                  styles.guitarFretColumn,
+                  isActive && {
+                    backgroundColor: `${accentColor}25`,
+                    borderColor: accentColor,
+                  },
+                  isPlayingThisFret && {
+                    backgroundColor: 'rgba(0, 245, 212, 0.35)',
+                    borderColor: '#00f5d4',
+                    borderWidth: 2,
+                    transform: [{ scale: 1.04 }],
+                    zIndex: 10,
+                  },
+                ]}
+                onPressIn={() => onPressString(k.value)}>
+                <Text
+                  style={[
+                    styles.guitarNoteText,
+                    isActive && { color: accentColor, fontWeight: '800' },
+                    isPlayingThisFret && { color: '#00f5d4', fontWeight: '900' },
+                  ]}>
+                  {k.note}
+                </Text>
+
+                {/* Vertical guitar string track with metallic glow */}
+                <View style={styles.guitarWireTrackVertical}>
+                  <View
+                    style={[
+                      styles.guitarWireVertical,
+                      { width: stringGirth },
+                      isActive && { backgroundColor: accentColor, shadowColor: accentColor, shadowOpacity: 1, shadowRadius: 4 },
+                      isPlayingThisFret && { backgroundColor: '#00f5d4', shadowColor: '#00f5d4', shadowOpacity: 1, shadowRadius: 6 },
+                    ]}
+                  />
+                </View>
+
+                <Text
+                  style={[
+                    styles.guitarFreqText,
+                    isPlayingThisFret && { color: '#00f5d4', fontWeight: '800' },
+                  ]}>
+                  {Math.round(k.freq)}Hz
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -761,50 +919,59 @@ function XylophoneBars({
   onPressBar: (val: number) => void;
   accentColor: string;
 }) {
+  const naturalKeys = useMemo(() => PIANO_KEYS.filter((k) => !k.isBlack), []);
+
   return (
     <View style={styles.xyloWrap}>
-      <Text style={styles.surfaceHint}>
-        TAP A RESONANT CHIME BAR TO TEST OR RECORD NOTE
-      </Text>
-      <View style={styles.xyloBarsRow}>
-        {PIANO_KEYS.map((k, i) => {
-          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.12;
-          const isPlayingThisBar = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
-          // Lower pitch = longer bar (130px), Higher pitch = shorter bar (75px)
-          const barHeight = 135 - i * 7;
-          return (
-            <Pressable
-              key={k.note}
-              style={[
-                styles.xyloBar,
-                { height: barHeight },
-                isActive && {
-                  backgroundColor: `${accentColor}40`,
-                  borderColor: accentColor,
-                },
-                isPlayingThisBar && {
-                  backgroundColor: 'rgba(0, 245, 212, 0.55)',
-                  borderColor: '#00f5d4',
-                  borderWidth: 2,
-                  transform: [{ scale: 1.08 }],
-                  zIndex: 10,
-                },
-              ]}
-              onPress={() => onPressBar(k.value)}>
-              <View style={[styles.xyloPin, isPlayingThisBar && { backgroundColor: '#00f5d4' }]} />
-              <Text
-                style={[
-                  styles.xyloNote,
-                  isActive && { color: accentColor, fontWeight: '900' },
-                  isPlayingThisBar && { color: '#000000', fontWeight: '900' },
-                ]}>
-                {k.note}
-              </Text>
-              <View style={[styles.xyloPin, isPlayingThisBar && { backgroundColor: '#00f5d4' }]} />
-            </Pressable>
-          );
-        })}
+      <View style={styles.scrollHeader}>
+        <Text style={styles.surfaceHint}>
+          TAP A RESONANT CHIME BAR TO TEST OR RECORD
+        </Text>
+        <Text style={styles.scrollBadge}>‹ SCROLL ‹ ›</Text>
       </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={true}
+        contentContainerStyle={styles.xyloScrollContent}>
+        <View style={styles.xyloBarsRow}>
+          {naturalKeys.map((k, i) => {
+            const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.08;
+            const isPlayingThisBar = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.08;
+            const barHeight = Math.max(68, 142 - (i % 12) * 6);
+            return (
+              <Pressable
+                key={k.note}
+                style={[
+                  styles.xyloBar,
+                  { height: barHeight },
+                  isActive && {
+                    backgroundColor: `${accentColor}40`,
+                    borderColor: accentColor,
+                  },
+                  isPlayingThisBar && {
+                    backgroundColor: 'rgba(0, 245, 212, 0.55)',
+                    borderColor: '#00f5d4',
+                    borderWidth: 2,
+                    transform: [{ scale: 1.08 }],
+                    zIndex: 10,
+                  },
+                ]}
+                onPressIn={() => onPressBar(k.value)}>
+                <View style={[styles.xyloPin, isPlayingThisBar && { backgroundColor: '#00f5d4' }]} />
+                <Text
+                  style={[
+                    styles.xyloNote,
+                    isActive && { color: accentColor, fontWeight: '900' },
+                    isPlayingThisBar && { color: '#000000', fontWeight: '900' },
+                  ]}>
+                  {k.note}
+                </Text>
+                <View style={[styles.xyloPin, isPlayingThisBar && { backgroundColor: '#00f5d4' }]} />
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -824,53 +991,63 @@ function MelodicPads({
   accentColor: string;
   instrument: { label: string; emoji: string };
 }) {
+  const naturalKeys = useMemo(() => PIANO_KEYS.filter((k) => !k.isBlack), []);
+
   return (
     <View style={styles.melodicWrap}>
-      <Text style={styles.surfaceHint}>
-        TAP {instrument.label.toUpperCase()} KEYS TO TEST OR RECORD PITCH
-      </Text>
-      <View style={styles.melodicGrid}>
-        {PIANO_KEYS.map((k) => {
-          const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.12;
-          const isPlayingThisPad = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.12;
-          return (
-            <Pressable
-              key={k.note}
-              style={[
-                styles.melodicPad,
-                isActive && {
-                  borderColor: accentColor,
-                  backgroundColor: `${accentColor}30`,
-                },
-                isPlayingThisPad && {
-                  borderColor: '#00f5d4',
-                  backgroundColor: 'rgba(0, 245, 212, 0.45)',
-                  transform: [{ scale: 1.08 }],
-                  borderWidth: 2.5,
-                  zIndex: 10,
-                },
-              ]}
-              onPress={() => onPressKey(k.value)}>
-              <Text style={styles.melodicEmoji}>{instrument.emoji}</Text>
-              <Text
-                style={[
-                  styles.melodicNote,
-                  isActive && { color: accentColor, fontWeight: '900' },
-                  isPlayingThisPad && { color: '#00f5d4', fontWeight: '900' },
-                ]}>
-                {k.note}
-              </Text>
-              <Text
-                style={[
-                  styles.melodicFreq,
-                  isPlayingThisPad && { color: '#00f5d4', fontWeight: '800' },
-                ]}>
-                {Math.round(k.freq)}Hz
-              </Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.scrollHeader}>
+        <Text style={styles.surfaceHint}>
+          TAP {instrument.label.toUpperCase()} KEYS TO PLAY OR RECORD
+        </Text>
+        <Text style={styles.scrollBadge}>‹ SCROLL ‹ ›</Text>
       </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={true}
+        contentContainerStyle={styles.melodicScrollContent}>
+        <View style={styles.melodicRow}>
+          {naturalKeys.map((k) => {
+            const isActive = activeValue !== null && activeValue !== undefined && Math.abs(k.value - activeValue) < 0.08;
+            const isPlayingThisPad = playbackValue !== null && playbackValue !== undefined && Math.abs(k.value - playbackValue) < 0.08;
+            return (
+              <Pressable
+                key={k.note}
+                style={[
+                  styles.melodicPad,
+                  isActive && {
+                    borderColor: accentColor,
+                    backgroundColor: `${accentColor}30`,
+                  },
+                  isPlayingThisPad && {
+                    borderColor: '#00f5d4',
+                    backgroundColor: 'rgba(0, 245, 212, 0.45)',
+                    transform: [{ scale: 1.08 }],
+                    borderWidth: 2.5,
+                    zIndex: 10,
+                  },
+                ]}
+                onPressIn={() => onPressKey(k.value)}>
+                <Text style={styles.melodicEmoji}>{instrument.emoji}</Text>
+                <Text
+                  style={[
+                    styles.melodicNote,
+                    isActive && { color: accentColor, fontWeight: '900' },
+                    isPlayingThisPad && { color: '#00f5d4', fontWeight: '900' },
+                  ]}>
+                  {k.note}
+                </Text>
+                <Text
+                  style={[
+                    styles.melodicFreq,
+                    isPlayingThisPad && { color: '#00f5d4', fontWeight: '800' },
+                  ]}>
+                  {Math.round(k.freq)}Hz
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -1079,23 +1256,48 @@ const styles = StyleSheet.create({
     fontFamily: mono,
     fontSize: 9,
     color: theme.textDim,
-    letterSpacing: 1.5,
-    textAlign: 'center',
-    marginBottom: 10,
+    letterSpacing: 1.2,
+    flex: 1,
+  },
+  scrollHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  scrollBadge: {
+    fontFamily: mono,
+    fontSize: 8.5,
+    color: '#00f5d4',
+    letterSpacing: 1,
+    fontWeight: '800',
+    backgroundColor: 'rgba(0, 245, 212, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 245, 212, 0.3)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
 
   // Piano keys
   pianoWrap: {
     alignItems: 'center',
-  },
-  pianoKeysRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 4,
     width: '100%',
   },
+  pianoScrollContent: {
+    paddingVertical: 4,
+  },
+  pianoKeysContainer: {
+    position: 'relative',
+    height: 145,
+  },
+  whiteKeysRow: {
+    flexDirection: 'row',
+    height: 142,
+  },
   pianoKey: {
-    flex: 1,
     height: 140,
     backgroundColor: '#0f1829',
     borderWidth: 1,
@@ -1103,117 +1305,163 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingBottom: 10,
+    paddingBottom: 8,
     borderBottomWidth: 3,
     borderBottomColor: '#2a3f65',
+    marginRight: 2,
   },
   pianoKeyNote: {
     fontFamily: mono,
-    fontSize: 11,
+    fontSize: 10.5,
     color: theme.text,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   pianoKeyFreq: {
     fontFamily: mono,
-    fontSize: 7.5,
+    fontSize: 7,
     color: theme.textDim,
-    marginTop: 3,
+    marginTop: 2,
+  },
+  blackKeysOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 88,
+  },
+  blackKey: {
+    position: 'absolute',
+    height: 86,
+    backgroundColor: '#050a14',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderBottomWidth: 3,
+    borderBottomColor: '#1e293b',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 6,
+    zIndex: 15,
+  },
+  blackKeyText: {
+    fontFamily: mono,
+    fontSize: 7.5,
+    color: '#94a3b8',
+    fontWeight: '800',
   },
 
   // Drum pads
-  drumWrap: {},
-  drumGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  drumWrap: {
+    width: '100%',
+  },
+  drumScrollContent: {
+    paddingVertical: 4,
+  },
+  drumTwoRowsContainer: {
     gap: 8,
-    justifyContent: 'space-between',
+  },
+  drumRow: {
+    flexDirection: 'row',
+    gap: 8,
   },
   drumPad: {
-    width: '23%',
-    height: 72,
+    width: 82,
+    height: 66,
     borderWidth: 1,
     borderColor: theme.border,
     borderRadius: 10,
     backgroundColor: theme.panel,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 4,
+    padding: 3,
   },
   drumPadEmoji: {
-    fontSize: 18,
-    marginBottom: 2,
+    fontSize: 16,
+    marginBottom: 1,
   },
   drumPadLabel: {
     fontFamily: mono,
-    fontSize: 9,
+    fontSize: 8.5,
     color: theme.text,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
     textAlign: 'center',
   },
   drumPadSub: {
     fontFamily: mono,
-    fontSize: 7,
+    fontSize: 6.5,
     color: theme.textDim,
-    marginTop: 2,
+    marginTop: 1,
   },
 
   // Guitar fretboard
-  guitarWrap: {},
-  guitarStringsList: {
-    gap: 6,
+  guitarWrap: {
+    width: '100%',
   },
-  guitarStringRow: {
+  guitarScrollContent: {
+    paddingVertical: 4,
+  },
+  guitarFretsRow: {
     flexDirection: 'row',
+    gap: 6,
     alignItems: 'center',
-    height: 22,
-    paddingHorizontal: 8,
+    height: 140,
+  },
+  guitarFretColumn: {
+    width: 54,
+    height: 135,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(28, 42, 69, 0.4)',
-    borderRadius: 6,
-    backgroundColor: 'rgba(11, 18, 32, 0.6)',
+    borderColor: 'rgba(28, 42, 69, 0.6)',
+    borderRadius: 8,
+    backgroundColor: 'rgba(11, 18, 32, 0.75)',
   },
   guitarNoteText: {
     fontFamily: mono,
-    fontSize: 10,
+    fontSize: 10.5,
     color: theme.text,
-    width: 32,
-    fontWeight: '700',
+    fontWeight: '800',
   },
-  guitarWireTrack: {
+  guitarWireTrackVertical: {
     flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
+    width: 12,
   },
-  guitarWire: {
-    width: '100%',
-    backgroundColor: '#ffd16670',
+  guitarWireVertical: {
+    height: '100%',
+    backgroundColor: '#ffd16690',
     borderRadius: 1,
   },
   guitarFreqText: {
     fontFamily: mono,
-    fontSize: 8,
+    fontSize: 7.5,
     color: theme.textDim,
-    width: 36,
-    textAlign: 'right',
+    textAlign: 'center',
   },
 
   // Xylophone bars
-  xyloWrap: {},
+  xyloWrap: {
+    width: '100%',
+  },
+  xyloScrollContent: {
+    paddingVertical: 4,
+  },
   xyloBarsRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'center',
     gap: 5,
-    height: 145,
+    height: 148,
     paddingBottom: 4,
   },
   xyloBar: {
-    flex: 1,
+    width: 44,
     borderWidth: 1,
     borderColor: '#1e2e4b',
-    borderRadius: 5,
+    borderRadius: 6,
     backgroundColor: '#0f1c30',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1227,44 +1475,49 @@ const styles = StyleSheet.create({
   },
   xyloNote: {
     fontFamily: mono,
-    fontSize: 10,
+    fontSize: 9.5,
     color: theme.text,
     fontWeight: '700',
   },
 
   // Melodic pads (Flute, Trumpet, Violin, Harp)
-  melodicWrap: {},
-  melodicGrid: {
+  melodicWrap: {
+    width: '100%',
+  },
+  melodicScrollContent: {
+    paddingVertical: 4,
+  },
+  melodicRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
-    justifyContent: 'center',
+    alignItems: 'center',
+    height: 90,
   },
   melodicPad: {
-    width: '30%',
-    height: 68,
+    width: 62,
+    height: 80,
     borderWidth: 1,
     borderColor: theme.border,
     borderRadius: 10,
     backgroundColor: theme.panel,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 6,
+    padding: 4,
   },
   melodicEmoji: {
-    fontSize: 16,
+    fontSize: 18,
     marginBottom: 2,
   },
   melodicNote: {
     fontFamily: mono,
-    fontSize: 11,
+    fontSize: 10.5,
     color: theme.text,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   melodicFreq: {
     fontFamily: mono,
-    fontSize: 8,
+    fontSize: 7.5,
     color: theme.textDim,
     marginTop: 2,
   },

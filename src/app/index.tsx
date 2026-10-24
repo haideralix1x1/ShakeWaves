@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,7 +24,6 @@ import { mono, theme } from '../ui/theme';
 
 export default function Home() {
   const router = useRouter();
-  const { width: windowWidth } = useWindowDimensions();
   const { bestLevel, currentStreak, totalScore } = useStats();
 
   const { selectedInstrument, setSelectedInstrument } = useInstrument();
@@ -34,7 +32,6 @@ export default function Home() {
   const pulseAnim = useMemo(() => new Animated.Value(1), []);
 
   const target = useMemo(() => tutorialLevel().targetWaveform, []);
-  const waveformWidth = Math.min(320, windowWidth - 44);
 
   useEffect(() => {
     const id = setInterval(() => setPhase((p) => (p + 1) % 100), 60);
@@ -57,6 +54,13 @@ export default function Home() {
     transitionTo(() => {
       router.push('/play');
     }, `Preparing ${instObj?.label || 'Game'}…`);
+  };
+
+  const handlePractice = () => {
+    const instObj = INSTRUMENTS.find((i) => i.id === selectedInstrument);
+    transitionTo(() => {
+      router.push('/practice');
+    }, `Opening ${instObj?.label || 'Instrument'} Practice…`);
   };
 
   const handleHowTo = () => {
@@ -84,22 +88,24 @@ export default function Home() {
         </View>
 
         <View style={styles.stage}>
-          <Waveform data={animated} color={chosenObj.color || theme.target} width={waveformWidth} height={80} strokeWidth={2.2} />
+          <Waveform data={animated} color={chosenObj.color || theme.target} height={80} strokeWidth={2.2} />
         </View>
 
         {/* ── Instrument Selection Before Game Start ── */}
         <View style={styles.pickerSection}>
           <View style={styles.pickerHeader}>
-            <Text style={styles.pickerTitle}>CHOOSE INSTRUMENT</Text>
-            <Text style={[styles.pickerActiveBadge, { color: chosenObj.color }]}>
+            <Text style={styles.pickerTitle} numberOfLines={1}>CHOOSE INSTRUMENT</Text>
+            <Text style={[styles.pickerActiveBadge, { color: chosenObj.color }]} numberOfLines={1}>
               {chosenObj.emoji} {chosenObj.label.toUpperCase()}
             </Text>
           </View>
-          <Text style={styles.pickerDesc}>
-            {selectedInstrument === 'mix'
-              ? 'Mix Mode: Blend multiple instruments to build melodies.'
-              : `Play all melodies tuned in authentic ${chosenObj.label} acoustics.`}
-          </Text>
+          <View style={styles.pickerDescContainer}>
+            <Text style={styles.pickerDesc} numberOfLines={2}>
+              {selectedInstrument === 'mix'
+                ? 'Mix Mode: Blend multiple instruments to build melodies.'
+                : `Play all melodies tuned in authentic ${chosenObj.label} acoustics.`}
+            </Text>
+          </View>
 
           <ScrollView
             horizontal
@@ -121,16 +127,15 @@ export default function Home() {
                       transform: [{ scale: 1.05 }],
                     },
                   ]}
-                  onPress={() => {
-                    setSelectedInstrument(inst.id);
-                    playUiTap(inst.id);
-                  }}>
+                  onPressIn={() => playUiTap()}
+                  onPress={() => setSelectedInstrument(inst.id)}>
                   <Text style={styles.instrEmoji}>{inst.emoji}</Text>
                   <Text
                     style={[
                       styles.instrLabel,
                       isSelected && { color: inst.color, fontWeight: '700' },
-                    ]}>
+                    ]}
+                    numberOfLines={1}>
                     {inst.label}
                   </Text>
                 </Pressable>
@@ -149,6 +154,11 @@ export default function Home() {
           <NeonButton
             label={`Start Game (${chosenObj.emoji} ${chosenObj.label})`}
             onPress={handleStart}
+          />
+          <NeonButton
+            label={`Practice (${chosenObj.emoji} ${chosenObj.label})`}
+            activeColor="#00f5d4"
+            onPress={handlePractice}
           />
           <NeonButton label="How to Play" variant="ghost" onPress={handleHowTo} />
         </View>
@@ -207,8 +217,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: theme.panel,
-    padding: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Picker Section
@@ -218,11 +230,13 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: theme.panel,
     padding: 12,
+    minHeight: 152,
   },
   pickerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    minHeight: 18,
     marginBottom: 4,
   },
   pickerTitle: {
@@ -238,12 +252,16 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     fontWeight: '700',
   },
+  pickerDescContainer: {
+    minHeight: 32,
+    justifyContent: 'flex-start',
+    marginBottom: 8,
+  },
   pickerDesc: {
     fontFamily: mono,
     fontSize: 9.5,
     color: theme.textDim,
-    lineHeight: 14,
-    marginBottom: 8,
+    lineHeight: 15,
   },
   pickerScroll: {
     gap: 8,
@@ -256,7 +274,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     alignItems: 'center',
+    justifyContent: 'center',
     minWidth: 70,
+    minHeight: 62,
     backgroundColor: 'rgba(255,255,255,0.02)',
   },
   instrEmoji: {

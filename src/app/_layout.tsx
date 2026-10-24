@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StatsProvider } from '../game/StatsContext';
 import { InstrumentProvider } from '../game/InstrumentContext';
 import { LoadingTransitionProvider } from '../ui/LoadingTransitionContext';
@@ -9,9 +9,16 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import LoadingScreen from '../ui/LoadingScreen';
 import { theme } from '../ui/theme';
+import { configureAudio } from '../audio/player';
+import { preloadClickSfx } from '../audio/sfx';
 
 export default function RootLayout() {
   const [initialLoaded, setInitialLoaded] = useState(false);
+
+  useEffect(() => {
+    configureAudio().catch(() => {});
+    preloadClickSfx().catch(() => {});
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.bg }}>
